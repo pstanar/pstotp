@@ -166,7 +166,7 @@ Array entries use index suffixes: `Fido2:Origins:0`, `Fido2:Origins:1`,
 - Type: `string`
 - Default: unset — no Android origin registered.
 - Env var: `Android__PackageName`
-- Purpose: Android app package name (e.g. `net.stanar.pstotp`) used
+- Purpose: Android app package name (e.g. `io.github.pstanar.pstotp`) used
   when the server auto-generates the `android:apk-key-hash:...`
   WebAuthn origin for Credential Manager.
 
