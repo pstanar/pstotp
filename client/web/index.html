@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PsTotp</title>
+    <script>
+      // Injected at serve time by ASP.NET. If the placeholder is still here
+      // (dev mode, static preview, etc.) default to root.
+      (function () {
+        var raw = "__BASE_PATH__";
+        window.__PSTOTP_BASE__ = raw.indexOf("__") === 0 ? "" : raw;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

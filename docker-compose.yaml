@@ -1,0 +1,37 @@
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - DatabaseProvider=PostgreSQL
+      - ConnectionStrings__PsTotpDb=Host=db;Database=pstotp;Username=pstotp;Password=pstotp
+      # Set these when deploying behind a reverse proxy with a public domain:
+      # - AllowedOrigins=https://totp.example.com
+      # - Fido2__ServerDomain=totp.example.com
+      # - Fido2__Origins__0=https://totp.example.com
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+
+  db:
+    image: postgres:18-alpine
+    environment:
+      - POSTGRES_DB=pstotp
+      - POSTGRES_USER=pstotp
+      - POSTGRES_PASSWORD=pstotp
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pstotp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  pg-data:

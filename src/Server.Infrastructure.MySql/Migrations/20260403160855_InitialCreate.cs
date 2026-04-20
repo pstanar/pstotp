@@ -1,0 +1,388 @@
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace PsTotp.Server.Infrastructure.MySql.Migrations
+{
+    /// <inheritdoc />
+    public partial class InitialCreate : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AlterDatabase()
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "LoginSessions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    Email = table.Column<string>(type: "longtext", nullable: false),
+                    Nonce = table.Column<byte[]>(type: "longblob", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    IsCompleted = table.Column<bool>(type: "tinyint(1)", nullable: false),
+                    DeviceId = table.Column<Guid>(type: "char(36)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LoginSessions", x => x.Id);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    Email = table.Column<string>(type: "varchar(255)", nullable: false),
+                    PasswordVerifier = table.Column<byte[]>(type: "longblob", nullable: false),
+                    PasswordKdfConfig = table.Column<string>(type: "json", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    LastLoginAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "Devices",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    DeviceName = table.Column<string>(type: "longtext", nullable: false),
+                    Platform = table.Column<string>(type: "longtext", nullable: false),
+                    ClientType = table.Column<string>(type: "longtext", nullable: false),
+                    Status = table.Column<string>(type: "varchar(255)", nullable: false),
+                    DevicePublicKey = table.Column<string>(type: "longtext", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    ApprovedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    LastSeenAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    RevokedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Devices", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Devices_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "RecoveryCodes",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    CodeHash = table.Column<string>(type: "longtext", nullable: false),
+                    CodeSlot = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    UsedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    ReplacedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RecoveryCodes", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RecoveryCodes_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "RecoverySessions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    Status = table.Column<string>(type: "longtext", nullable: false),
+                    RequiresWebAuthn = table.Column<bool>(type: "tinyint(1)", nullable: false),
+                    WebAuthnCompleted = table.Column<bool>(type: "tinyint(1)", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    ReleaseEarliestAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    CompletedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    CancelledAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    ReplacementDeviceId = table.Column<Guid>(type: "char(36)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RecoverySessions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RecoverySessions_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "VaultEntries",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    EntryPayload = table.Column<byte[]>(type: "longblob", nullable: false),
+                    EntryVersion = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_VaultEntries", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_VaultEntries_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "WebAuthnCredentials",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    CredentialId = table.Column<byte[]>(type: "varbinary(3072)", nullable: false),
+                    PublicKey = table.Column<byte[]>(type: "longblob", nullable: false),
+                    SignCount = table.Column<long>(type: "bigint", nullable: true),
+                    FriendlyName = table.Column<string>(type: "longtext", nullable: true),
+                    Transports = table.Column<string>(type: "json", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    LastUsedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    RevokedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WebAuthnCredentials", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_WebAuthnCredentials_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "AuditEvents",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: true),
+                    DeviceId = table.Column<Guid>(type: "char(36)", nullable: true),
+                    EventType = table.Column<string>(type: "longtext", nullable: false),
+                    EventData = table.Column<string>(type: "json", nullable: true),
+                    IpAddress = table.Column<string>(type: "longtext", nullable: true),
+                    UserAgent = table.Column<string>(type: "longtext", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AuditEvents", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AuditEvents_Devices_DeviceId",
+                        column: x => x.DeviceId,
+                        principalTable: "Devices",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_AuditEvents_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id");
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "RefreshTokens",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    DeviceId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    TokenHash = table.Column<string>(type: "varchar(255)", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    RevokedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    ReplacedByTokenId = table.Column<Guid>(type: "char(36)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RefreshTokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RefreshTokens_Devices_DeviceId",
+                        column: x => x.DeviceId,
+                        principalTable: "Devices",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_RefreshTokens_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
+                name: "VaultKeyEnvelopes",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: false),
+                    DeviceId = table.Column<Guid>(type: "char(36)", nullable: true),
+                    EnvelopeType = table.Column<string>(type: "varchar(255)", nullable: false),
+                    WrappedKeyPayload = table.Column<byte[]>(type: "longblob", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    RevokedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_VaultKeyEnvelopes", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_VaultKeyEnvelopes_Devices_DeviceId",
+                        column: x => x.DeviceId,
+                        principalTable: "Devices",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_VaultKeyEnvelopes_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AuditEvents_DeviceId",
+                table: "AuditEvents",
+                column: "DeviceId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AuditEvents_UserId_CreatedAt",
+                table: "AuditEvents",
+                columns: new[] { "UserId", "CreatedAt" },
+                descending: new[] { false, true });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Devices_UserId_Status",
+                table: "Devices",
+                columns: new[] { "UserId", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_LoginSessions_ExpiresAt",
+                table: "LoginSessions",
+                column: "ExpiresAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RecoveryCodes_UserId_UsedAt_ReplacedAt",
+                table: "RecoveryCodes",
+                columns: new[] { "UserId", "UsedAt", "ReplacedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RecoverySessions_UserId",
+                table: "RecoverySessions",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_DeviceId",
+                table: "RefreshTokens",
+                column: "DeviceId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_TokenHash",
+                table: "RefreshTokens",
+                column: "TokenHash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_UserId_RevokedAt",
+                table: "RefreshTokens",
+                columns: new[] { "UserId", "RevokedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Email",
+                table: "Users",
+                column: "Email",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_VaultEntries_UserId_DeletedAt",
+                table: "VaultEntries",
+                columns: new[] { "UserId", "DeletedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_VaultKeyEnvelopes_DeviceId",
+                table: "VaultKeyEnvelopes",
+                column: "DeviceId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_VaultKeyEnvelopes_UserId_DeviceId_EnvelopeType",
+                table: "VaultKeyEnvelopes",
+                columns: new[] { "UserId", "DeviceId", "EnvelopeType" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WebAuthnCredentials_CredentialId",
+                table: "WebAuthnCredentials",
+                column: "CredentialId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WebAuthnCredentials_UserId",
+                table: "WebAuthnCredentials",
+                column: "UserId");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "AuditEvents");
+
+            migrationBuilder.DropTable(
+                name: "LoginSessions");
+
+            migrationBuilder.DropTable(
+                name: "RecoveryCodes");
+
+            migrationBuilder.DropTable(
+                name: "RecoverySessions");
+
+            migrationBuilder.DropTable(
+                name: "RefreshTokens");
+
+            migrationBuilder.DropTable(
+                name: "VaultEntries");
+
+            migrationBuilder.DropTable(
+                name: "VaultKeyEnvelopes");
+
+            migrationBuilder.DropTable(
+                name: "WebAuthnCredentials");
+
+            migrationBuilder.DropTable(
+                name: "Devices");
+
+            migrationBuilder.DropTable(
+                name: "Users");
+        }
+    }
+}

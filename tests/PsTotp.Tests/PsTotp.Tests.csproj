@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest" Version="4.2.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Server.Api\PsTotp.Server.Api.csproj" />
+    <ProjectReference Include="..\..\src\Server.Application\PsTotp.Server.Application.csproj" />
+    <ProjectReference Include="..\..\src\Server.Domain\PsTotp.Server.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Server.Infrastructure\PsTotp.Server.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

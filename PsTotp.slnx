@@ -1,0 +1,30 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Server.Api/">
+    <Project Path="src/Server.Api/PsTotp.Server.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Server.Application/">
+    <Project Path="src/Server.Application/PsTotp.Server.Application.csproj" />
+  </Folder>
+  <Folder Name="/src/Server.Domain/">
+    <Project Path="src/Server.Domain/PsTotp.Server.Domain.csproj" />
+  </Folder>
+  <Folder Name="/src/Server.Infrastructure/">
+    <Project Path="src/Server.Infrastructure/PsTotp.Server.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Server.Infrastructure.Postgres/">
+    <Project Path="src/Server.Infrastructure.Postgres/PsTotp.Server.Infrastructure.Postgres.csproj" />
+  </Folder>
+  <Folder Name="/src/Server.Infrastructure.SqlServer/">
+    <Project Path="src/Server.Infrastructure.SqlServer/PsTotp.Server.Infrastructure.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/src/Server.Infrastructure.MySql/">
+    <Project Path="src/Server.Infrastructure.MySql/PsTotp.Server.Infrastructure.MySql.csproj" />
+  </Folder>
+  <Folder Name="/src/Server.Infrastructure.Sqlite/">
+    <Project Path="src/Server.Infrastructure.Sqlite/PsTotp.Server.Infrastructure.Sqlite.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PsTotp.Tests/PsTotp.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Clock face -->
+  <circle cx="256" cy="256" r="240" fill="#f0ebe5" stroke="#4a3728" stroke-width="24"/>
+
+  <!-- Hour tick marks -->
+  <g stroke="#4a3728" stroke-width="8" stroke-linecap="round">
+    <line x1="256" y1="40" x2="256" y2="72"/>
+    <line x1="364" y1="76" x2="348" y2="104"/>
+    <line x1="436" y1="148" x2="408" y2="164"/>
+    <line x1="472" y1="256" x2="440" y2="256"/>
+    <line x1="436" y1="364" x2="408" y2="348"/>
+    <line x1="364" y1="436" x2="348" y2="408"/>
+    <line x1="256" y1="472" x2="256" y2="440"/>
+    <line x1="148" y1="436" x2="164" y2="408"/>
+    <line x1="76" y1="364" x2="104" y2="348"/>
+    <line x1="40" y1="256" x2="72" y2="256"/>
+    <line x1="76" y1="148" x2="104" y2="164"/>
+    <line x1="148" y1="76" x2="164" y2="104"/>
+  </g>
+
+  <!-- Hour hand (~10 o'clock) -->
+  <line x1="256" y1="256" x2="176" y2="156" stroke="#4a3728" stroke-width="14" stroke-linecap="round"/>
+  <!-- Minute hand (~2 o'clock) -->
+  <line x1="256" y1="256" x2="348" y2="148" stroke="#4a3728" stroke-width="10" stroke-linecap="round"/>
+  <!-- Center dot -->
+  <circle cx="256" cy="256" r="12" fill="#4a3728"/>
+
+  <!-- Key (ring centered on clock hands base, angled toward bottom-right) -->
+  <g transform="translate(256, 256) rotate(45)">
+    <!-- Key ring -->
+    <circle cx="0" cy="0" r="48" fill="none" stroke="#b45309" stroke-width="16"/>
+    <!-- Key shaft -->
+    <line x1="48" y1="0" x2="180" y2="0" stroke="#b45309" stroke-width="14" stroke-linecap="round"/>
+    <!-- Key teeth -->
+    <line x1="140" y1="0" x2="140" y2="26" stroke="#b45309" stroke-width="12" stroke-linecap="round"/>
+    <line x1="165" y1="0" x2="165" y2="20" stroke="#b45309" stroke-width="12" stroke-linecap="round"/>
+  </g>
+</svg>

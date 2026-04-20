@@ -1,0 +1,6 @@
+@PsTotp.Server.Api_HostAddress = http://localhost:5245
+
+GET {{PsTotp.Server.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

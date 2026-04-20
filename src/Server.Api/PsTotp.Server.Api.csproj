@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+  
+  <PropertyGroup>
+    <SpaRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../client/web'))</SpaRoot>
+  </PropertyGroup>
+
+  <Target Name="BuildSpa" BeforeTargets="Publish" Condition="'$(SkipSpa)' != 'true'">
+    <Message Importance="high" Text="Building SPA from $(SpaRoot)..." />
+    <Exec Command="npm ci" WorkingDirectory="$(SpaRoot)" />
+    <Exec Command="npm run build:deploy" WorkingDirectory="$(SpaRoot)" />
+  </Target>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PsTotp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.6">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.6" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.14.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageReference Include="Serilog.Enrichers.Process" Version="3.0.0" />
+    <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+    <PackageReference Include="Serilog.Expressions" Version="5.0.0" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Server.Application\PsTotp.Server.Application.csproj" />
+    <ProjectReference Include="..\Server.Infrastructure\PsTotp.Server.Infrastructure.csproj" />
+    <ProjectReference Include="..\Server.Infrastructure.Postgres\PsTotp.Server.Infrastructure.Postgres.csproj" />
+    <ProjectReference Include="..\Server.Infrastructure.SqlServer\PsTotp.Server.Infrastructure.SqlServer.csproj" />
+    <ProjectReference Include="..\Server.Infrastructure.MySql\PsTotp.Server.Infrastructure.MySql.csproj" />
+    <ProjectReference Include="..\Server.Infrastructure.Sqlite\PsTotp.Server.Infrastructure.Sqlite.csproj" />
+  </ItemGroup>
+</Project>
