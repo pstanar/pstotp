@@ -100,6 +100,11 @@ public static class Routes
         group.MapDelete("/vault/{entryId:guid}", VaultEndpoints.DeleteEntry);
         group.MapPost("/vault/reorder", VaultEndpoints.ReorderEntries);
 
+        // Per-user encrypted icon library (custom user-uploaded icons,
+        // reusable across entries)
+        group.MapGet("/vault/icon-library", VaultIconLibraryEndpoints.Get);
+        group.MapPut("/vault/icon-library", VaultIconLibraryEndpoints.Update);
+
         // Devices
         group.MapGet("/devices", DeviceEndpoints.ListDevices);
         group.MapPost("/devices/{deviceId:guid}/approve", DeviceEndpoints.ApproveDevice);

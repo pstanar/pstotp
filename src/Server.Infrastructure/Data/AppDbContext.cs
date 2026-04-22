@@ -18,6 +18,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<RegistrationSession> RegistrationSessions => Set<RegistrationSession>();
     public DbSet<WebAuthnCeremony> WebAuthnCeremonies => Set<WebAuthnCeremony>();
     public DbSet<PasswordResetSession> PasswordResetSessions => Set<PasswordResetSession>();
+    public DbSet<VaultIconLibrary> VaultIconLibraries => Set<VaultIconLibrary>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -127,6 +128,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.Email, e.ExpiresAt });
+        });
+
+        modelBuilder.Entity<VaultIconLibrary>(entity =>
+        {
+            // One row per user — UserId is the PK (not Id).
+            entity.HasKey(e => e.UserId);
+            entity.Property(e => e.EncryptedPayload).IsRequired();
+            entity.HasOne(e => e.User).WithOne().HasForeignKey<VaultIconLibrary>(e => e.UserId);
         });
     }
 }

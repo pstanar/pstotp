@@ -16,7 +16,9 @@ public sealed record BackupData(
     List<BackupVaultKeyEnvelope> VaultKeyEnvelopes,
     List<BackupRecoveryCode> RecoveryCodes,
     List<BackupWebAuthnCredential> WebAuthnCredentials,
-    List<BackupAuditEvent> AuditEvents);
+    List<BackupAuditEvent> AuditEvents,
+    // Added after format v1; optional on restore for backward compat.
+    List<BackupVaultIconLibrary>? VaultIconLibraries = null);
 
 public sealed record BackupUser(
     Guid Id, string Email, string PasswordVerifier, string PasswordKdfConfig,
@@ -49,3 +51,7 @@ public sealed record BackupWebAuthnCredential(
 public sealed record BackupAuditEvent(
     Guid Id, Guid? UserId, Guid? DeviceId, string EventType,
     string? EventData, string? IpAddress, string? UserAgent, DateTime CreatedAt);
+
+public sealed record BackupVaultIconLibrary(
+    Guid UserId, string EncryptedPayload, int Version,
+    DateTime CreatedAt, DateTime UpdatedAt);

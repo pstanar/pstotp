@@ -59,6 +59,10 @@ public static class BackupEndpoints
             AuditEvents: await db.AuditEvents.AsNoTracking().Select(e => new BackupAuditEvent(
                 e.Id, e.UserId, e.DeviceId, e.EventType,
                 e.EventData, e.IpAddress, e.UserAgent, e.CreatedAt
+            )).ToListAsync(),
+            VaultIconLibraries: await db.VaultIconLibraries.AsNoTracking().Select(l => new BackupVaultIconLibrary(
+                l.UserId, Convert.ToBase64String(l.EncryptedPayload), l.Version,
+                l.CreatedAt, l.UpdatedAt
             )).ToListAsync()
         );
 
@@ -153,6 +157,7 @@ public static class BackupEndpoints
             await db.RecoveryCodes.ExecuteDeleteAsync();
             await db.RecoverySessions.ExecuteDeleteAsync();
             await db.PasswordResetSessions.ExecuteDeleteAsync();
+            await db.VaultIconLibraries.ExecuteDeleteAsync();
             await db.VaultKeyEnvelopes.ExecuteDeleteAsync();
             await db.VaultEntries.ExecuteDeleteAsync();
             await db.RefreshTokens.ExecuteDeleteAsync();
@@ -242,6 +247,23 @@ public static class BackupEndpoints
                     EventType = e.EventType, EventData = e.EventData,
                     IpAddress = e.IpAddress, UserAgent = e.UserAgent, CreatedAt = e.CreatedAt,
                 });
+            }
+
+            // Optional in the format (backups from before icon libraries
+            // landed won't carry this array — treat null as empty).
+            if (data.VaultIconLibraries is not null)
+            {
+                foreach (var l in data.VaultIconLibraries)
+                {
+                    db.VaultIconLibraries.Add(new Domain.Entities.VaultIconLibrary
+                    {
+                        UserId = l.UserId,
+                        EncryptedPayload = Convert.FromBase64String(l.EncryptedPayload),
+                        Version = l.Version,
+                        CreatedAt = l.CreatedAt,
+                        UpdatedAt = l.UpdatedAt,
+                    });
+                }
             }
 
             // Log the restore event

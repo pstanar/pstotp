@@ -16,7 +16,7 @@ namespace PsTotp.Server.Infrastructure.MySql.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.5")
+                .HasAnnotation("ProductVersion", "10.0.7")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("PsTotp.Server.Domain.Entities.AuditEvent", b =>
@@ -408,6 +408,29 @@ namespace PsTotp.Server.Infrastructure.MySql.Migrations
                     b.ToTable("VaultEntries");
                 });
 
+            modelBuilder.Entity("PsTotp.Server.Domain.Entities.VaultIconLibrary", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<byte[]>("EncryptedPayload")
+                        .IsRequired()
+                        .HasColumnType("longblob");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("VaultIconLibraries");
+                });
+
             modelBuilder.Entity("PsTotp.Server.Domain.Entities.VaultKeyEnvelope", b =>
                 {
                     b.Property<Guid>("Id")
@@ -596,6 +619,17 @@ namespace PsTotp.Server.Infrastructure.MySql.Migrations
                     b.HasOne("PsTotp.Server.Domain.Entities.User", "User")
                         .WithMany("VaultEntries")
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("PsTotp.Server.Domain.Entities.VaultIconLibrary", b =>
+                {
+                    b.HasOne("PsTotp.Server.Domain.Entities.User", "User")
+                        .WithOne()
+                        .HasForeignKey("PsTotp.Server.Domain.Entities.VaultIconLibrary", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
