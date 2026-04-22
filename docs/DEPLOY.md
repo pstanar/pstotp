@@ -25,15 +25,42 @@ Building a release from source:
 
 The script derives the version from the nearest `git` tag (falling back to
 `0.0.0`), adds the number of commits since that tag as the build number,
-and a short SHA as metadata. Output:
+and a short SHA as metadata. Running either script requires the .NET SDK,
+Node.js, and — if you want the Android APK — a JDK 17+ plus the Android
+SDK. Output lands in `publish/`:
 
-- `publish/win-x64/PsTotp.Server.Api.exe` — self-contained Windows binary
-- `publish/linux-x64/PsTotp.Server.Api` — self-contained Linux binary
-- `publish/osx-arm64/PsTotp.Server.Api` — self-contained macOS (Apple Silicon) binary
+- `pstotp-<version>-win-x64-{self-contained,framework-dependent}.zip`
+- `pstotp-<version>-linux-x64-{self-contained,framework-dependent}.tar.gz`
+- `pstotp-<version>-osx-arm64-{self-contained,framework-dependent}.tar.gz`
+- `pstotp-<version>-android-debug.apk` — Android debug APK (only produced
+  when `ANDROID_HOME` / `ANDROID_SDK_ROOT` is set; release-signed APK is
+  not wired up yet)
+- `licenses/` — NuGet + npm attribution manifests (also copied inside
+  every archive)
+- `SHA256SUMS` — checksums for every `pstotp-*` artifact
 
 Each self-contained build includes the .NET runtime and the embedded
 web SPA, so the deployed artifact has no framework dependency and no
-separate `wwwroot`.
+separate `wwwroot`. The script also tags a `pstotp:latest` / `pstotp:<version>`
+Docker image of the server when it finishes; set `SKIP_DOCKER_IMAGE=1`
+to turn that off.
+
+### Building without a local toolchain
+
+If you have Docker but no .NET SDK / Node / JDK / Android SDK, run the
+whole pipeline in a container:
+
+```bash
+docker build -f Dockerfile.build -o publish .
+```
+
+That builds a throwaway image carrying every toolchain, runs `build.sh`
+inside it (with `SKIP_DOCKER_IMAGE=1`), and exports `publish/` to the
+host — producing byte-identical artifacts to a native build. The server
+runtime image itself is still built by the main `Dockerfile` on the host
+(`docker build -t pstotp .`); building an image from inside a container
+would need Docker-in-Docker and isn't worth it when you already have
+Docker on the host.
 
 ## Picking a deployment target
 

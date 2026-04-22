@@ -43,6 +43,11 @@ developer; everyone else comes in cold. Prerequisites:
 /docker-compose.yaml                Postgres + server container for local / prod use
 /build.sh, /build.ps1               Cross-platform publish scripts
 /Dockerfile                         Multi-stage build → self-contained server + SPA
+/Dockerfile.build                   Container-based all-in-one build of every
+                                    release artifact (archives + Android APK),
+                                    for hosts that don't have the toolchains
+/Dockerfile.build.dockerignore      Per-file ignore used only by Dockerfile.build
+                                    so it can see .git + client/android
 ```
 
 Project references go in one direction: Domain ← Application ← Infrastructure,

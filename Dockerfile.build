@@ -1,0 +1,99 @@
+# syntax=docker/dockerfile:1.7
+
+# Reproducible all-in-one build.
+#
+# Runs build.sh's full pipeline — SPA, third-party license manifests,
+# cross-platform .NET publishes, the Android debug APK, archives, and
+# checksums — inside a container, so a user who only has Docker (no
+# .NET SDK, no Node, no JDK, no Android SDK) can produce identical
+# artifacts without polluting their host.
+#
+# Usage:
+#   docker build -f Dockerfile.build -o publish .
+#
+# The `-o publish` (aka `--output type=local,dest=./publish`) flag
+# tells BuildKit to write the final stage's filesystem to ./publish
+# on the host — giving you the archives, APK, license manifests, and
+# SHA256SUMS exactly as build.sh would produce them.
+#
+# The server runtime image is NOT produced here. Building a Docker
+# image from inside Docker needs DinD or a socket mount, and you
+# already have Docker — so build it separately from the main file:
+#
+#   docker build -t pstotp -t pstotp:$(git describe --tags) .
+
+ARG DOTNET_SDK_VERSION=10.0
+ARG NODE_MAJOR=22
+# Android command-line tools bootstrap. Pinned so builds are reproducible;
+# bump with --build-arg CMDLINE_TOOLS_VERSION=... when you roll forward.
+ARG CMDLINE_TOOLS_VERSION=11076708
+ARG ANDROID_PLATFORM=35
+ARG ANDROID_BUILD_TOOLS=35.0.0
+
+# ---------------------------------------------------------------------------
+# Stage 1 — tools
+#
+# Stacks every toolchain the build pipeline touches onto the official
+# .NET SDK image. Kept separate from the build stage so the expensive
+# Android SDK download is layer-cached across source changes.
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_SDK_VERSION} AS tools
+
+ARG NODE_MAJOR
+ARG CMDLINE_TOOLS_VERSION
+ARG ANDROID_PLATFORM
+ARG ANDROID_BUILD_TOOLS
+
+# OS tooling: curl/gnupg for NodeSource, git for version detection, zip
+# for the win-x64 archive, unzip for the Android command-line tools
+# bootstrap, and the headless JDK 17 that Gradle 9 + AGP 8.13 require.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg git zip unzip openjdk-17-jdk-headless \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node.js at the major version we ship on. NodeSource is the lowest-friction
+# way to get a non-ancient Node on Debian.
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+# Android SDK: command-line tools + the platform and build-tools the
+# app pins to. License acceptance is non-interactive.
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+RUN mkdir -p "$ANDROID_HOME/cmdline-tools" \
+ && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" -o /tmp/cmdtools.zip \
+ && unzip -q /tmp/cmdtools.zip -d "$ANDROID_HOME/cmdline-tools" \
+ && mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest" \
+ && rm /tmp/cmdtools.zip \
+ && yes | sdkmanager --licenses > /dev/null \
+ && sdkmanager --install \
+      "platform-tools" \
+      "platforms;android-${ANDROID_PLATFORM}" \
+      "build-tools;${ANDROID_BUILD_TOOLS}" > /dev/null
+
+# ---------------------------------------------------------------------------
+# Stage 2 — build
+#
+# Drops the repo in and runs build.sh. The inner `docker build pstotp`
+# step is skipped (we can't build an image from inside a container
+# without DinD); everything else runs identically to a host build and
+# lands in /src/publish.
+# ---------------------------------------------------------------------------
+FROM tools AS build
+WORKDIR /src
+COPY . .
+RUN SKIP_DOCKER_IMAGE=1 ./build.sh
+
+# ---------------------------------------------------------------------------
+# Stage 3 — export
+#
+# `FROM scratch` means `--output` copies only what we COPY in — the
+# publish/ tree — to the host, without any OS cruft tagging along.
+# ---------------------------------------------------------------------------
+FROM scratch AS export
+COPY --from=build /src/publish /

@@ -1,0 +1,32 @@
+# Per-file ignore for Dockerfile.build (BuildKit picks this up when the
+# dockerfile is named Dockerfile.build). The top-level .dockerignore is
+# tuned for the slim server-image build and excludes .git + client/android;
+# the full build pipeline needs both, so we start from a clean slate here.
+
+.vs
+.idea
+.claude
+_ReSharper.Caches
+TestResults
+
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/build
+
+# Android build intermediates (Gradle + Kotlin caches, APK outputs)
+client/android/.gradle
+client/android/**/build
+client/android/local.properties
+
+# Pre-built publish/ artifacts from prior host runs
+publish
+
+src/Server.Api/appsettings.LocalProduction.json
+
+*.user
+*.suo
+*.DotSettings.user
+Thumbs.db
+.DS_Store

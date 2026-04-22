@@ -87,9 +87,17 @@ Generated from commit $Sha on $Today.
 "@
 Set-Content -Path "$LicensesDir\README.md" -Value $ReadmeContent
 
-# Docker image
-Write-Host "`n=== Building Docker image ==="
-docker build --build-arg "APP_VERSION=$Version+$Sha" -t pstotp -t "pstotp:$Version" $ScriptDir
+# Docker image.
+#
+# Skipped when SKIP_DOCKER_IMAGE is set — the usual case when build.sh
+# runs inside a container (Dockerfile.build) and the server image is
+# produced separately by the host.
+if ($env:SKIP_DOCKER_IMAGE) {
+    Write-Host "`n=== Skipping server Docker image (SKIP_DOCKER_IMAGE set) ==="
+} else {
+    Write-Host "`n=== Building Docker image ==="
+    docker build --build-arg "APP_VERSION=$Version+$Sha" -t pstotp -t "pstotp:$Version" $ScriptDir
+}
 
 # Platform publishes
 foreach ($Rid in $Rids) {
@@ -125,6 +133,43 @@ foreach ($Rid in $Rids) {
     }
 }
 
+# Android APK (debug build).
+#
+# Requires an Android SDK plus a JDK 17+. We only ship the debug-signed
+# artifact for now — it's enough to smoke-test the build pipeline and
+# hand out to known testers. A release-signed APK will be wired in later
+# once a real upload keystore exists. If the SDK isn't configured we
+# skip the step rather than fail, so server-only build hosts still work.
+if ($env:ANDROID_HOME -or $env:ANDROID_SDK_ROOT) {
+    Write-Host "`n=== Building Android APK (debug) ==="
+    $AndroidDir = "$ScriptDir\client\android"
+
+    # Gradle 9 + AGP 8.13 need JDK 17+. If the user hasn't set JAVA_HOME
+    # we fall back to Android Studio's bundled JBR on the usual paths —
+    # the common case for Android devs.
+    if (-not $env:JAVA_HOME) {
+        $studioJbr = 'C:\Program Files\Android\Android Studio\jbr'
+        if (Test-Path $studioJbr) {
+            $env:JAVA_HOME = $studioJbr
+            Write-Host "    Using Android Studio JBR: $env:JAVA_HOME"
+        }
+    }
+
+    Push-Location $AndroidDir
+    try {
+        & "$AndroidDir\gradlew.bat" --no-daemon :app:assembleDebug
+        if ($LASTEXITCODE -ne 0) { throw "Gradle assembleDebug failed" }
+    } finally {
+        Pop-Location
+    }
+    $ApkSrc = "$AndroidDir\app\build\outputs\apk\debug\app-debug.apk"
+    $ApkDst = "$OutDir\pstotp-$Version-android-debug.apk"
+    Copy-Item $ApkSrc $ApkDst
+    Write-Host "    $ApkDst"
+} else {
+    Write-Host "`n=== Skipping Android APK (ANDROID_HOME / ANDROID_SDK_ROOT not set) ==="
+}
+
 # SHA-256 checksums
 Write-Host "`n=== Generating checksums ==="
 $archives = Get-ChildItem "$OutDir\pstotp-*"
@@ -136,5 +181,7 @@ $checksums | Set-Content "$OutDir\SHA256SUMS"
 $checksums | Write-Host
 
 Write-Host "`n=== Done ==="
-Write-Host "Docker image: pstotp:latest"
+if (-not $env:SKIP_DOCKER_IMAGE) {
+    Write-Host "Docker image: pstotp:latest"
+}
 Write-Host "Archives + checksums in $OutDir\"

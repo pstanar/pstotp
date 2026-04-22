@@ -66,10 +66,20 @@ PsTotp itself is licensed under Apache 2.0 — see \`/LICENSE\`.
 Generated from commit $SHA on $(date -u +%Y-%m-%d).
 EOF
 
-# Docker image
-echo ""
-echo "=== Building Docker image ==="
-docker build --build-arg APP_VERSION="$VERSION+$SHA" -t pstotp -t "pstotp:$VERSION" "$SCRIPT_DIR"
+# Docker image.
+#
+# Skipped when SKIP_DOCKER_IMAGE is set — the usual case when build.sh
+# runs *inside* a container (Dockerfile.build), because building an
+# image from within a container needs Docker-in-Docker or a socket mount
+# and the server image is trivially built by the host afterwards.
+if [ -n "${SKIP_DOCKER_IMAGE:-}" ]; then
+    echo ""
+    echo "=== Skipping server Docker image (SKIP_DOCKER_IMAGE set) ==="
+else
+    echo ""
+    echo "=== Building Docker image ==="
+    docker build --build-arg APP_VERSION="$VERSION+$SHA" -t pstotp -t "pstotp:$VERSION" "$SCRIPT_DIR"
+fi
 
 # Platform publishes
 for RID in "${RIDS[@]}"; do
@@ -110,6 +120,46 @@ for RID in "${RIDS[@]}"; do
     done
 done
 
+# Android APK (debug build).
+#
+# Requires an Android SDK plus a JDK 17+. We only ship the debug-signed
+# artifact for now — it's enough to smoke-test the build pipeline and
+# hand out to known testers. A release-signed APK will be wired in later
+# once a real upload keystore exists. If the SDK isn't configured we
+# skip the step rather than fail, so server-only build hosts still work.
+if [ -n "${ANDROID_HOME:-}" ] || [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+    echo ""
+    echo "=== Building Android APK (debug) ==="
+    ANDROID_DIR="$SCRIPT_DIR/client/android"
+
+    # Gradle 9 + AGP 8.13 need JDK 17+. If the user hasn't set JAVA_HOME
+    # we fall back to Android Studio's bundled JBR on the usual paths —
+    # the common case for Android devs. We don't export it globally, just
+    # for this subshell.
+    if [ -z "${JAVA_HOME:-}" ]; then
+        for candidate in \
+            "/c/Program Files/Android/Android Studio/jbr" \
+            "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+            "/opt/android-studio/jbr" \
+            "$HOME/android-studio/jbr"; do
+            if [ -d "$candidate" ]; then
+                export JAVA_HOME="$candidate"
+                echo "    Using Android Studio JBR: $JAVA_HOME"
+                break
+            fi
+        done
+    fi
+
+    (cd "$ANDROID_DIR" && ./gradlew --no-daemon :app:assembleDebug)
+    APK_SRC="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+    APK_DST="$OUT_DIR/pstotp-${VERSION}-android-debug.apk"
+    cp "$APK_SRC" "$APK_DST"
+    echo "    $APK_DST"
+else
+    echo ""
+    echo "=== Skipping Android APK (ANDROID_HOME / ANDROID_SDK_ROOT not set) ==="
+fi
+
 # SHA-256 checksums
 echo ""
 echo "=== Generating checksums ==="
@@ -118,5 +168,7 @@ cat "$OUT_DIR/SHA256SUMS"
 
 echo ""
 echo "=== Done ==="
-echo "Docker image: pstotp:latest"
+if [ -z "${SKIP_DOCKER_IMAGE:-}" ]; then
+    echo "Docker image: pstotp:latest"
+fi
 echo "Archives + checksums in $OUT_DIR/"
