@@ -94,6 +94,11 @@ export function SettingsPage() {
           </section>
 
           <section className="border-border rounded-lg border bg-card p-5 shadow-sm">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Display</h3>
+            <ShowNextCodeSetting />
+          </section>
+
+          <section className="border-border rounded-lg border bg-card p-5 shadow-sm">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Security</h3>
             <div className="space-y-4">
               <div>
@@ -121,6 +126,27 @@ export function SettingsPage() {
         {import.meta.env.VITE_APP_VERSION || "dev"}
       </p>
     </div>
+  );
+}
+
+function ShowNextCodeSetting() {
+  const showNextCode = useSettingsStore((s) => s.showNextCode);
+  const setShowNextCode = useSettingsStore((s) => s.setShowNextCode);
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={showNextCode}
+        onChange={(e) => setShowNextCode(e.target.checked)}
+        className="border-input mt-0.5 h-4 w-4 rounded border accent-primary"
+      />
+      <span className="text-sm">
+        <span className="font-medium">Show upcoming code</span>
+        <span className="text-muted-foreground mt-0.5 block">
+          In the last 10 seconds, preview the next code; copying in the last 3 seconds hands you the fresh one.
+        </span>
+      </span>
+    </label>
   );
 }
 

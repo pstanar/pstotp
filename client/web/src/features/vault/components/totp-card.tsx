@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import { generateTotp } from "@/features/vault/utils/totp";
 import { buildOtpauthUri } from "@/features/vault/utils/otpauth-uri";
 import { EntryIcon } from "./entry-icon";
 import { CountdownRing } from "./countdown-ring";
-import { TotpLiveDisplay } from "./totp-live-display";
+import { TotpLiveDisplay, type TotpLiveState } from "./totp-live-display";
 import { EntryContextMenu } from "./entry-context-menu";
 import { QrCodeDialog } from "./qr-code-dialog";
 import { recordUse } from "@/lib/usage-tracker";
@@ -22,20 +23,24 @@ export function TotpCard({ entry, onEdit, onDelete }: TotpCardProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [showQr, setShowQr] = useState(false);
   const { toast } = useToast();
+  const showNextCode = useSettingsStore((s) => s.showNextCode);
   // Always copy whatever TotpLiveDisplay currently shows. Falling back to a
   // fresh generateTotp only for the very first click before the display has
   // rendered (unlikely in practice).
-  const displayedCodeRef = useRef<string>("");
+  const liveRef = useRef<TotpLiveState>({ code: "", nextCode: "", timeLeft: 0 });
 
   const handleCopyCode = useCallback(async () => {
-    const code = displayedCodeRef.current
-      || generateTotp(entry.secret, entry.algorithm, entry.digits, entry.period);
+    const state = liveRef.current;
+    const useNext = showNextCode && state.timeLeft <= 3 && state.nextCode.length > 0;
+    const code = useNext
+      ? state.nextCode
+      : state.code || generateTotp(entry.secret, entry.algorithm, entry.digits, entry.period);
     await navigator.clipboard.writeText(code);
     recordUse(entry.id);
     setCopied(true);
-    toast("Code copied");
+    toast(useNext ? "Next code copied" : "Code copied");
     setTimeout(() => setCopied(false), 2000);
-  }, [entry.secret, entry.algorithm, entry.digits, entry.period, entry.id, toast]);
+  }, [entry.secret, entry.algorithm, entry.digits, entry.period, entry.id, toast, showNextCode]);
 
   const handleCopySecret = useCallback(async () => {
     await navigator.clipboard.writeText(entry.secret);
@@ -74,7 +79,8 @@ export function TotpCard({ entry, onEdit, onDelete }: TotpCardProps) {
             algorithm={entry.algorithm}
             digits={entry.digits}
             period={entry.period}
-            codeRef={displayedCodeRef}
+            liveRef={liveRef}
+            showNextCode={showNextCode}
           />
 
           <button onClick={handleCopyCode}

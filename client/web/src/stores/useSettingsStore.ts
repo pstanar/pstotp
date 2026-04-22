@@ -18,6 +18,11 @@ export const DEFAULT_LOCK_TIMEOUT_MS = 5 * 60_000;
 interface SettingsStore {
   lockTimeoutMs: number;
   setLockTimeoutMs: (ms: number) => void;
+  // When true, show a faded preview of the next TOTP code during the
+  // final 10s and hand out that next code on copy during the final 3s.
+  // Off by default; matches the Android client's "Show upcoming code".
+  showNextCode: boolean;
+  setShowNextCode: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -25,6 +30,8 @@ export const useSettingsStore = create<SettingsStore>()(
     (set) => ({
       lockTimeoutMs: DEFAULT_LOCK_TIMEOUT_MS,
       setLockTimeoutMs: (ms) => set({ lockTimeoutMs: ms }),
+      showNextCode: false,
+      setShowNextCode: (v) => set({ showNextCode: v }),
     }),
     {
       name: "pstotp-settings",
