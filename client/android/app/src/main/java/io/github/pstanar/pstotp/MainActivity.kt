@@ -38,7 +38,16 @@ class MainActivity : FragmentActivity() {
             val viewModel: VaultViewModel = viewModel()
             val authViewModel: AuthViewModel = viewModel()
             viewModel.onSyncNeeded = { authViewModel.syncNow() }
-            authViewModel.onSyncComplete = { viewModel.reloadEntries() }
+            authViewModel.onSyncComplete = {
+                viewModel.reloadEntries()
+                // Converge the icon library with server state on every sync
+                // so edits from another device land here too. Last-write-wins
+                // on conflicts per project policy.
+                viewModel.refreshIconLibraryFromServer()
+            }
+            // Hand VaultViewModel the server-side api. Null in standalone mode
+            // leaves the library purely local-first.
+            viewModel.iconLibraryApi = authViewModel.iconLibraryApi
             val useSystemColors by viewModel.useSystemColors.collectAsStateWithLifecycle()
             PsTotpTheme(dynamicColor = useSystemColors) {
                 val isSetUp by viewModel.isSetUp.collectAsStateWithLifecycle()

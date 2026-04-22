@@ -46,6 +46,12 @@ object SettingsKeys {
     // Sync state
     const val PENDING_REORDER = "pending_reorder"
 
+    // Icon library — local-first encrypted blob with last server-ack'd version.
+    // Empty (absent) when the user hasn't written a library yet.
+    const val ICON_LIBRARY_CIPHERTEXT = "icon_library_ciphertext"         // base64 of nonce||ciphertext||tag
+    const val ICON_LIBRARY_SERVER_VERSION = "icon_library_server_version" // int as string; "0" when never pushed
+    const val ICON_LIBRARY_DIRTY = "icon_library_dirty"                   // "true" when local has unpushed changes
+
     // Lock timeout
     const val LOCK_TIMEOUT_MS = "lock_timeout_ms"
     const val DEFAULT_LOCK_TIMEOUT_MS = 5 * 60 * 1000L // 5 minutes

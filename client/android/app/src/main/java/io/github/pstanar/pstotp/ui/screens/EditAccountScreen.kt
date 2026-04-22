@@ -86,6 +86,7 @@ fun EditAccountScreen(
                 currentIcon = icon,
                 issuer = issuer,
                 onIconChanged = { icon = it },
+                vaultViewModel = viewModel,
             )
 
             Spacer(modifier = Modifier.height(24.dp))

@@ -43,6 +43,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val vaultApi = VaultApi(apiClient)
     val authService = AuthService(application, db, apiClient, authApi)
     val devicesApi = DevicesApi(apiClient)
+    val iconLibraryApi = io.github.pstanar.pstotp.core.api.IconLibraryApi(apiClient)
     val syncService = SyncService(db, apiClient, vaultApi, repository)
 
     private val _connectionState = MutableStateFlow(ConnectionState.Disconnected)

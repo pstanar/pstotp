@@ -160,7 +160,12 @@ internal fun ManualEntryTab(viewModel: VaultViewModel, onAccountAdded: () -> Uni
     )
 
     Spacer(modifier = Modifier.height(16.dp))
-    IconPicker(currentIcon = icon, issuer = issuer, onIconChanged = { icon = it })
+    IconPicker(
+        currentIcon = icon,
+        issuer = issuer,
+        onIconChanged = { icon = it },
+        vaultViewModel = viewModel,
+    )
 
     Spacer(modifier = Modifier.height(12.dp))
     TextButton(onClick = { showAdvanced = !showAdvanced }) {

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import io.github.pstanar.pstotp.core.api.IconLibraryApi
 import io.github.pstanar.pstotp.core.crypto.KeystoreHelper
 import io.github.pstanar.pstotp.core.db.AppDatabase
 import io.github.pstanar.pstotp.core.db.EntryUsageEntity
@@ -14,6 +15,7 @@ import io.github.pstanar.pstotp.core.db.SettingsKeys
 import io.github.pstanar.pstotp.core.model.ImportAction
 import io.github.pstanar.pstotp.core.model.ImportCandidate
 import io.github.pstanar.pstotp.core.model.LayoutMode
+import io.github.pstanar.pstotp.core.model.LibraryIcon
 import io.github.pstanar.pstotp.core.model.LockTimeout
 import io.github.pstanar.pstotp.core.model.SortMode
 import io.github.pstanar.pstotp.core.model.VaultEntry
@@ -21,6 +23,7 @@ import io.github.pstanar.pstotp.core.model.VaultEntryPlaintext
 import io.github.pstanar.pstotp.core.model.VaultExport
 import io.github.pstanar.pstotp.core.util.IconFetch
 import javax.crypto.Cipher
+import io.github.pstanar.pstotp.core.repository.IconLibraryRepository
 import io.github.pstanar.pstotp.core.repository.VaultKeyMismatchException
 import io.github.pstanar.pstotp.core.repository.VaultRepository
 
@@ -34,6 +37,14 @@ import io.github.pstanar.pstotp.core.repository.VaultRepository
 class VaultViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = VaultRepository(AppDatabase.getInstance(application))
+    private val iconLibraryRepo = IconLibraryRepository(AppDatabase.getInstance(application))
+
+    /**
+     * Optional IconLibraryApi — set by AuthViewModel once the session is
+     * connected. Null in standalone mode (local-first library still works,
+     * just no server sync). Mutations fall back to local-only when null.
+     */
+    var iconLibraryApi: IconLibraryApi? = null
 
     private val _isSetUp = MutableStateFlow<Boolean?>(null) // null = loading
     val isSetUp: StateFlow<Boolean?> = _isSetUp.asStateFlow()
@@ -68,6 +79,9 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isBiometricEnabled = MutableStateFlow(false)
     val isBiometricEnabled: StateFlow<Boolean> = _isBiometricEnabled.asStateFlow()
+
+    private val _libraryIcons = MutableStateFlow<List<LibraryIcon>>(emptyList())
+    val libraryIcons: StateFlow<List<LibraryIcon>> = _libraryIcons.asStateFlow()
 
     /** Set by MainActivity to trigger sync after CRUD operations in connected mode. */
     var onSyncNeeded: (() -> Unit)? = null
@@ -153,6 +167,76 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- Icon library ---
+    //
+    // Local-first: all mutations write to local settings immediately and —
+    // if we're connected — push through to the server. Standalone callers
+    // just don't wire `iconLibraryApi`; the library remains device-local.
+    // Last-write-wins on concurrent edits, matching the web client.
+
+    /** Pull the latest library from the server and adopt it locally. */
+    fun refreshIconLibraryFromServer() {
+        val key = _vaultKey.value ?: return
+        val api = iconLibraryApi ?: return
+        viewModelScope.launch {
+            runCatching {
+                val blob = iconLibraryRepo.pullFromServer(key, api)
+                _libraryIcons.value = blob.icons
+                iconLibraryRepo.pushIfDirty(api)
+            }
+        }
+    }
+
+    fun addLibraryIcon(label: String, dataUrl: String, onError: (String) -> Unit = {}) {
+        val key = _vaultKey.value ?: return
+        viewModelScope.launch {
+            try {
+                if (_libraryIcons.value.size >= IconLibraryRepository.MAX_ICONS) {
+                    onError("Icon library is full (${IconLibraryRepository.MAX_ICONS} max).")
+                    return@launch
+                }
+                val next = _libraryIcons.value + LibraryIcon(
+                    id = IconLibraryRepository.newIconId(),
+                    label = label.ifBlank { "Icon" },
+                    data = dataUrl,
+                    createdAt = java.time.Instant.now().toString(),
+                )
+                val blob = iconLibraryRepo.save(key, next, iconLibraryApi)
+                _libraryIcons.value = blob.icons
+            } catch (e: Exception) {
+                onError(e.message ?: "Could not save icon")
+            }
+        }
+    }
+
+    fun removeLibraryIcon(id: String, onError: (String) -> Unit = {}) {
+        val key = _vaultKey.value ?: return
+        viewModelScope.launch {
+            try {
+                val next = _libraryIcons.value.filterNot { it.id == id }
+                val blob = iconLibraryRepo.save(key, next, iconLibraryApi)
+                _libraryIcons.value = blob.icons
+            } catch (e: Exception) {
+                onError(e.message ?: "Could not remove icon")
+            }
+        }
+    }
+
+    fun renameLibraryIcon(id: String, label: String, onError: (String) -> Unit = {}) {
+        val key = _vaultKey.value ?: return
+        viewModelScope.launch {
+            try {
+                val next = _libraryIcons.value.map {
+                    if (it.id == id) it.copy(label = label.ifBlank { it.label }) else it
+                }
+                val blob = iconLibraryRepo.save(key, next, iconLibraryApi)
+                _libraryIcons.value = blob.icons
+            } catch (e: Exception) {
+                onError(e.message ?: "Could not rename icon")
+            }
+        }
+    }
+
     fun setupPassword(password: String, onComplete: () -> Unit) {
         viewModelScope.launch {
             try {
@@ -179,6 +263,10 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         _vaultKey.value = vaultKey
         _entries.value = entries
         _error.value = null
+        // Warm up the icon library from local storage so the picker is
+        // populated without waiting on the network. Server pull is opt-in
+        // via refreshIconLibraryFromServer() once connected.
+        _libraryIcons.value = iconLibraryRepo.loadLocal(vaultKey).icons
     }
 
     fun unlock(password: String, onSuccess: () -> Unit, onComplete: () -> Unit = {}) {
@@ -203,6 +291,7 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         _vaultKey.value?.fill(0) // Zero out vault key
         _vaultKey.value = null
         _entries.value = emptyList()
+        _libraryIcons.value = emptyList()
     }
 
     /**
