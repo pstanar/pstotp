@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { EntryIcon } from "./entry-icon";
+import { IconLibrarySection } from "./icon-library-section";
 import { downloadIconAsDataUrl } from "@/lib/icon-fetch";
 import type { VaultEntry } from "@/types/vault-types";
 
@@ -157,6 +158,9 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
               </button>
             </div>
             {urlError && <p className="text-destructive mt-1 text-xs">{urlError}</p>}
+
+            {/* My Icons library */}
+            <IconLibrarySection currentIcon={icon} onPickIcon={setIcon} />
 
             {/* Emoji grid */}
             <div className="mt-2 flex flex-wrap gap-1">

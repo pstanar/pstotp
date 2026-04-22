@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { VaultEntry } from "@/types/vault-types";
+import { useIconLibraryStore } from "./useIconLibraryStore";
 
 interface VaultState {
   isUnlocked: boolean;
@@ -40,6 +41,8 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
     // Zero out vault key before clearing
     const { vaultKey } = get();
     if (vaultKey) vaultKey.fill(0);
+    // Drop any cached icon-library state too — it was keyed by this vault key.
+    useIconLibraryStore.getState().clear();
     set(initialState);
   },
   setEntries: (entries) =>
