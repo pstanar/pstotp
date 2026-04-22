@@ -427,6 +427,7 @@ namespace PsTotp.Server.Infrastructure.SqlServer.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.HasKey("UserId");

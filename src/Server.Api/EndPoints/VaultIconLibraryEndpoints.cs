@@ -90,6 +90,9 @@ public static class VaultIconLibraryEndpoints
         }
         else
         {
+            // Fast in-memory check for the common stale-client case; the
+            // DB-level concurrency token (see AppDbContext) closes the
+            // read-modify-write race between two concurrent writers.
             if (library.Version != request.ExpectedVersion)
                 return Results.Conflict(new { Error = "Library was modified on another device; refetch and retry", library.Version });
 
@@ -98,7 +101,24 @@ public static class VaultIconLibraryEndpoints
             library.UpdatedAt = now;
         }
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Two writers both read the same Version and raced the UPDATE;
+            // ours lost. Reload and report the winner's version so the
+            // client can refetch-and-retry.
+            var current = await db.VaultIconLibraries
+                .AsNoTracking()
+                .FirstOrDefaultAsync(l => l.UserId == userId);
+            return Results.Conflict(new
+            {
+                Error = "Library was modified on another device; refetch and retry",
+                Version = current?.Version ?? 0,
+            });
+        }
         return Results.Ok(new IconLibraryUpdateResponse(library.Version, library.UpdatedAt));
     }
 }

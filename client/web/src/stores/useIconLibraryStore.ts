@@ -5,6 +5,7 @@ import {
   fetchIconLibrary,
   putIconLibrary,
 } from "@/features/vault/api/icon-library-api";
+import { ApiError } from "@/lib/api-client";
 import {
   encryptIconLibrary,
   decryptIconLibrary,
@@ -123,8 +124,10 @@ async function saveLibrary(
     set({ icons, serverVersion: updated.version });
     return;
   } catch (err) {
-    // 409 surfaces as ApiError(409, ...) from the api-client layer.
-    if (!(err instanceof Error) || !err.message.toLowerCase().includes("modified")) {
+    // Only treat a real 409 as a concurrency conflict. Matching on the
+    // message text would miss the server's current body shape and let
+    // genuine errors silently become silent refetch-and-retries.
+    if (!(err instanceof ApiError) || err.status !== 409) {
       throw err;
     }
   }

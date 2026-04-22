@@ -424,6 +424,7 @@ namespace PsTotp.Server.Infrastructure.MySql.Migrations
                         .HasColumnType("datetime(6)");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.HasKey("UserId");

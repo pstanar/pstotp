@@ -135,6 +135,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // One row per user — UserId is the PK (not Id).
             entity.HasKey(e => e.UserId);
             entity.Property(e => e.EncryptedPayload).IsRequired();
+            // Optimistic concurrency: EF adds `WHERE Version = @original` to
+            // generated UPDATEs so two concurrent writers at the same version
+            // can't both succeed — the second throws DbUpdateConcurrencyException.
+            entity.Property(e => e.Version).IsConcurrencyToken();
             entity.HasOne(e => e.User).WithOne().HasForeignKey<VaultIconLibrary>(e => e.UserId);
         });
     }

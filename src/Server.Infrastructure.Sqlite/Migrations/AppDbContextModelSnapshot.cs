@@ -422,6 +422,7 @@ namespace PsTotp.Server.Infrastructure.Sqlite.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.HasKey("UserId");

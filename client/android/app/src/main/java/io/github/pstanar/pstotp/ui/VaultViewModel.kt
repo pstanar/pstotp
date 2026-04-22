@@ -185,15 +185,22 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
     // just don't wire `iconLibraryApi`; the library remains device-local.
     // Last-write-wins on concurrent edits, matching the web client.
 
-    /** Pull the latest library from the server and adopt it locally. */
+    /**
+     * Reconcile the local library with the server. Offline edits go up
+     * first — otherwise pullFromServer would overwrite the local
+     * ciphertext and clear the dirty flag before the push ever ran,
+     * silently dropping the user's offline changes. A 409 during the
+     * push is resolved inside pushCiphertext via refetch-and-retry
+     * (last-write-wins per project policy).
+     */
     fun refreshIconLibraryFromServer() {
         val key = _vaultKey.value ?: return
         val api = iconLibraryApi ?: return
         viewModelScope.launch {
             runCatching {
+                iconLibraryRepo.pushIfDirty(api)
                 val blob = iconLibraryRepo.pullFromServer(key, api)
                 _libraryIcons.value = blob.icons
-                iconLibraryRepo.pushIfDirty(api)
             }
         }
     }
