@@ -41,4 +41,6 @@ Desktop.ini
 /client/android/app/build/
 /client/android/core/build/
 /client/android/build/
+/client/android/local.properties
+
 /publish/
