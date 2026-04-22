@@ -3,7 +3,7 @@ package io.github.pstanar.pstotp.core.crypto
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
+import androidx.security.crypto.MasterKey
 
 /**
  * Keystore-backed encrypted storage for sensitive values that must not
@@ -22,10 +22,14 @@ object SecureStore {
 
     fun getInstance(context: Context): SharedPreferences {
         return instance ?: synchronized(this) {
+            val appContext = context.applicationContext
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
             instance ?: EncryptedSharedPreferences.create(
+                appContext,
                 FILE_NAME,
-                MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC),
-                context.applicationContext,
+                masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             ).also { instance = it }

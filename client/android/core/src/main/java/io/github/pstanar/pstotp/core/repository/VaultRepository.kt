@@ -13,6 +13,7 @@ import io.github.pstanar.pstotp.core.db.SettingsKeys
 import io.github.pstanar.pstotp.core.db.VaultEntryEntity
 import io.github.pstanar.pstotp.core.model.VaultEntry
 import io.github.pstanar.pstotp.core.model.VaultEntryPlaintext
+import io.github.pstanar.pstotp.core.util.optStringOrNull
 import org.json.JSONObject
 import java.util.UUID
 
@@ -294,7 +295,7 @@ class VaultRepository(private val db: AppDatabase) {
             algorithm = obj.optString("algorithm", "SHA1"),
             digits = obj.optInt("digits", 6),
             period = obj.optInt("period", 30),
-            icon = obj.optString("icon", null),
+            icon = obj.optStringOrNull("icon"),
         )
     }
 }

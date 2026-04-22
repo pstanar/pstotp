@@ -1,10 +1,7 @@
 package io.github.pstanar.pstotp.core.model.api
 
+import io.github.pstanar.pstotp.core.util.optStringOrNull
 import org.json.JSONObject
-
-/** Null-safe string read: returns null for missing or JSON-null values. */
-private fun JSONObject.optStringOrNull(key: String): String? =
-    if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 
 data class VaultSyncResponse(
     val entries: List<VaultEntryDto>,
@@ -35,7 +32,7 @@ data class VaultEntryDto(
             id = json.getString("id"),
             entryPayload = json.getString("entryPayload"),
             entryVersion = json.getInt("entryVersion"),
-            deletedAt = json.optString("deletedAt", null),
+            deletedAt = json.optStringOrNull("deletedAt"),
             updatedAt = json.getString("updatedAt"),
             sortOrder = json.optInt("sortOrder", 0),
         )

@@ -1,5 +1,6 @@
 package io.github.pstanar.pstotp.core.model.api
 
+import io.github.pstanar.pstotp.core.util.optStringOrNull
 import org.json.JSONObject
 
 data class RecoveryRedeemResponse(
@@ -26,8 +27,8 @@ data class RecoveryMaterialResponse(
         fun fromJson(json: JSONObject) = RecoveryMaterialResponse(
             status = json.getString("status"),
             recoveryEnvelope = json.optJSONObject("recoveryEnvelope")?.let { Envelope.fromJson(it) },
-            replacementDeviceId = json.optString("replacementDeviceId", null),
-            releaseEarliestAt = json.optString("releaseEarliestAt", null),
+            replacementDeviceId = json.optStringOrNull("replacementDeviceId"),
+            releaseEarliestAt = json.optStringOrNull("releaseEarliestAt"),
         )
     }
 }

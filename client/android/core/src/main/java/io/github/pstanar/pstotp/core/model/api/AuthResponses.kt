@@ -1,5 +1,6 @@
 package io.github.pstanar.pstotp.core.model.api
 
+import io.github.pstanar.pstotp.core.util.optStringOrNull
 import org.json.JSONObject
 
 data class LoginChallengeResponse(
@@ -39,12 +40,12 @@ data class LoginCompleteResponse(
     companion object {
         fun fromJson(json: JSONObject) = LoginCompleteResponse(
             userId = json.getString("userId"),
-            accessToken = json.optString("accessToken", null),
-            refreshToken = json.optString("refreshToken", null),
+            accessToken = json.optStringOrNull("accessToken"),
+            refreshToken = json.optStringOrNull("refreshToken"),
             device = LoginDeviceInfo.fromJson(json.getJSONObject("device")),
             envelopes = json.optJSONObject("envelopes")?.let { LoginEnvelopes.fromJson(it) },
-            approvalRequestId = json.optString("approvalRequestId", null),
-            role = json.optString("role", null),
+            approvalRequestId = json.optStringOrNull("approvalRequestId"),
+            role = json.optStringOrNull("role"),
             forcePasswordReset = json.optBoolean("forcePasswordReset", false),
         )
     }
@@ -85,7 +86,7 @@ data class BeginRegistrationResponse(
         fun fromJson(json: JSONObject) = BeginRegistrationResponse(
             registrationSessionId = json.getString("registrationSessionId"),
             emailVerificationRequired = json.getBoolean("emailVerificationRequired"),
-            verificationCode = json.optString("verificationCode", null),
+            verificationCode = json.optStringOrNull("verificationCode"),
         )
     }
 }
@@ -100,8 +101,8 @@ data class RegisterResponse(
         fun fromJson(json: JSONObject) = RegisterResponse(
             userId = json.getString("userId"),
             deviceId = json.getString("deviceId"),
-            accessToken = json.optString("accessToken", null),
-            refreshToken = json.optString("refreshToken", null),
+            accessToken = json.optStringOrNull("accessToken"),
+            refreshToken = json.optStringOrNull("refreshToken"),
         )
     }
 }
@@ -112,8 +113,8 @@ data class RefreshResponse(
 ) {
     companion object {
         fun fromJson(json: JSONObject) = RefreshResponse(
-            accessToken = json.optString("accessToken", null),
-            refreshToken = json.optString("refreshToken", null),
+            accessToken = json.optStringOrNull("accessToken"),
+            refreshToken = json.optStringOrNull("refreshToken"),
         )
     }
 }

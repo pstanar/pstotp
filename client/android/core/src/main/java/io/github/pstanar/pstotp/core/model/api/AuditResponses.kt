@@ -1,5 +1,6 @@
 package io.github.pstanar.pstotp.core.model.api
 
+import io.github.pstanar.pstotp.core.util.optStringOrNull
 import org.json.JSONObject
 
 data class AuditEventDto(
@@ -14,10 +15,10 @@ data class AuditEventDto(
         fun fromJson(json: JSONObject) = AuditEventDto(
             id = json.getString("id"),
             eventType = json.getString("eventType"),
-            eventData = json.optString("eventData", null),
-            ipAddress = json.optString("ipAddress", null),
+            eventData = json.optStringOrNull("eventData"),
+            ipAddress = json.optStringOrNull("ipAddress"),
             createdAt = json.getString("createdAt"),
-            deviceId = json.optString("deviceId", null),
+            deviceId = json.optStringOrNull("deviceId"),
         )
     }
 }
