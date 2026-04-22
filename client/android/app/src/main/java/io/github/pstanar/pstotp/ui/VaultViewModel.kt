@@ -52,6 +52,9 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
     private val _useSystemColors = MutableStateFlow(true)
     val useSystemColors: StateFlow<Boolean> = _useSystemColors.asStateFlow()
 
+    private val _showNextCode = MutableStateFlow(false)
+    val showNextCode: StateFlow<Boolean> = _showNextCode.asStateFlow()
+
     private val _sortMode = MutableStateFlow(SortMode.MANUAL)
     val sortMode: StateFlow<SortMode> = _sortMode.asStateFlow()
 
@@ -114,6 +117,7 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isSetUp.value = repository.isSetUp()
             _useSystemColors.value = repository.getSetting(SettingsKeys.USE_SYSTEM_COLORS) != "false"
+            _showNextCode.value = repository.getSetting(SettingsKeys.SHOW_NEXT_CODE) == "true"
             _sortMode.value = SortMode.fromStorageKey(repository.getSetting(SettingsKeys.SORT_MODE))
             _sortReversed.value = repository.getSetting(SettingsKeys.SORT_REVERSED) == "true"
             _layoutMode.value = LayoutMode.fromStorageKey(repository.getSetting(SettingsKeys.LAYOUT_MODE))
@@ -129,6 +133,13 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         _useSystemColors.value = value
         viewModelScope.launch {
             repository.setSetting(SettingsKeys.USE_SYSTEM_COLORS, value.toString())
+        }
+    }
+
+    fun setShowNextCode(value: Boolean) {
+        _showNextCode.value = value
+        viewModelScope.launch {
+            repository.setSetting(SettingsKeys.SHOW_NEXT_CODE, value.toString())
         }
     }
 

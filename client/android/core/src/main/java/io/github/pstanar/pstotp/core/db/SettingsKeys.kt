@@ -35,6 +35,9 @@ object SettingsKeys {
 
     // Appearance
     const val USE_SYSTEM_COLORS = "use_system_colors"
+    // When true, the TOTP card/grid shows a faded preview of the next
+    // code during the last 10s, and tapping in the last 3s copies it.
+    const val SHOW_NEXT_CODE = "show_next_code"
 
     // Sort mode
     const val SORT_MODE = "sort_mode"

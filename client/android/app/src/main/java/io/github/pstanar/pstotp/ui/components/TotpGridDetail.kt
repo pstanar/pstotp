@@ -51,15 +51,19 @@ import io.github.pstanar.pstotp.core.model.VaultEntry
 @Composable
 fun TotpGridDetail(
     entry: VaultEntry,
-    onCopy: (String) -> Unit,
+    onCopy: (code: String, isNext: Boolean) -> Unit,
+    showNextCode: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var code by remember(entry.id) { mutableStateOf("") }
+    var nextCode by remember(entry.id) { mutableStateOf("") }
     var timeLeft by remember(entry.id) { mutableIntStateOf(entry.period) }
 
     LaunchedEffect(entry.id, entry.secret, entry.period) {
         while (true) {
-            code = TotpGenerator.generate(entry.secret, entry.algorithm, entry.digits, entry.period)
+            val now = System.currentTimeMillis() / 1000
+            code = TotpGenerator.generate(entry.secret, entry.algorithm, entry.digits, entry.period, now)
+            nextCode = TotpGenerator.generate(entry.secret, entry.algorithm, entry.digits, entry.period, now + entry.period)
             timeLeft = TotpGenerator.timeRemaining(entry.period)
             delay(1000)
         }
@@ -72,7 +76,11 @@ fun TotpGridDetail(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { if (code.isNotEmpty()) onCopy(code) }
+            .clickable {
+                val useNext = showNextCode && timeLeft <= 3 && nextCode.isNotEmpty()
+                val pick = if (useNext) nextCode else code
+                if (pick.isNotEmpty()) onCopy(pick, useNext)
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -131,6 +139,43 @@ fun TotpGridDetail(
             }
         }
 
+        // Next-code preview — only in the last 10s so the panel doesn't
+        // grow at rest. Indicates which code will be handed to the
+        // clipboard if the user taps during the final 3s.
+        if (showNextCode && timeLeft <= 10 && nextCode.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            val previewColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "next",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = previewColor,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                val (nextFirst, nextSecond) = splitCode(nextCode)
+                Text(
+                    text = nextFirst,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.sp,
+                    color = previewColor,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = nextSecond,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.sp,
+                    color = previewColor,
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(6.dp))
 
         Row(
@@ -147,7 +192,11 @@ fun TotpGridDetail(
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             IconButton(
-                onClick = { if (code.isNotEmpty()) onCopy(code) },
+                onClick = {
+                    val useNext = showNextCode && timeLeft <= 3 && nextCode.isNotEmpty()
+                    val pick = if (useNext) nextCode else code
+                    if (pick.isNotEmpty()) onCopy(pick, useNext)
+                },
                 modifier = Modifier.size(40.dp),
             ) {
                 Icon(

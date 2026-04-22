@@ -8,10 +8,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,17 +21,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,7 +73,7 @@ private val COMMON_EMOJIS = listOf(
 
 private const val MAX_ICON_SIZE = 64
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun IconPicker(
     currentIcon: String?,
@@ -279,7 +281,7 @@ fun IconPicker(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MyIconsSection(
     icons: List<LibraryIcon>,
@@ -288,7 +290,6 @@ private fun MyIconsSection(
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    var actionTarget by remember { mutableStateOf<LibraryIcon?>(null) }
     var renameTarget by remember { mutableStateOf<LibraryIcon?>(null) }
 
     Row(
@@ -323,6 +324,7 @@ private fun MyIconsSection(
                 icons.forEach { libIcon ->
                     val selected = currentIcon == libIcon.data
                     val bitmap = remember(libIcon.data) { decodeDataUrlToBitmap(libIcon.data) }
+                    var menuExpanded by remember(libIcon.id) { mutableStateOf(false) }
                     Box(
                         modifier = Modifier
                             .size(44.dp)
@@ -336,65 +338,64 @@ private fun MyIconsSection(
                                     MaterialTheme.colorScheme.outline.copy(alpha = 0.0f),
                                     RoundedCornerShape(4.dp),
                                 )
-                            )
-                            .combinedClickable(
-                                onClick = { onPick(libIcon.data) },
-                                onLongClick = { actionTarget = libIcon },
                             ),
-                        contentAlignment = Alignment.Center,
                     ) {
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = libIcon.label,
-                                modifier = Modifier.size(36.dp),
+                        // Tap target for picking (the whole tile area)
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { onPick(libIcon.data) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = libIcon.label,
+                                    modifier = Modifier.size(36.dp),
+                                )
+                            } else {
+                                Text("?", style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                        // Corner overflow — opens the per-tile action menu.
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(1.dp)
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                                )
+                                .clickable { menuExpanded = true },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = "Icon options",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        } else {
-                            Text("?", style = MaterialTheme.typography.bodyLarge)
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Rename") },
+                                    onClick = { menuExpanded = false; renameTarget = libIcon },
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                                    },
+                                    onClick = { menuExpanded = false; onDelete(libIcon.id) },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-    }
-
-    // Long-press action sheet (rename / delete)
-    actionTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { actionTarget = null },
-            title = { Text(target.label.ifBlank { "Icon" }) },
-            text = {
-                Text(
-                    "Renaming only affects the library. Deleting removes the icon from the library — vault entries that already use it keep their copy.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    renameTarget = target
-                    actionTarget = null
-                }) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Rename")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    onDelete(target.id)
-                    actionTarget = null
-                }) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-        )
     }
 
     // Rename dialog

@@ -2,15 +2,22 @@ package io.github.pstanar.pstotp.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,7 +57,7 @@ fun TotpGridTile(
     val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer
     else MaterialTheme.colorScheme.surfaceContainer
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
@@ -58,54 +65,77 @@ fun TotpGridTile(
             .combinedClickable(
                 onClick = onSelect,
                 onLongClick = { menuExpanded = true },
-            )
-            .padding(vertical = 10.dp, horizontal = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            ),
     ) {
-        ServiceIcon(issuer = entry.issuer, icon = entry.icon, size = 40)
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = entry.issuer,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (entry.accountName.isNotBlank() && entry.accountName != entry.issuer) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ServiceIcon(issuer = entry.issuer, icon = entry.icon, size = 40)
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = entry.accountName,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = entry.issuer,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (entry.accountName.isNotBlank() && entry.accountName != entry.issuer) {
+                Text(
+                    text = entry.accountName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
 
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
+        // Compact overflow affordance so the menu is reachable with a
+        // single tap — long-press still works as a fallback.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(2.dp)
+                .size(24.dp)
+                .clip(CircleShape)
+                .clickable { menuExpanded = true },
+            contentAlignment = Alignment.Center,
         ) {
-            DropdownMenuItem(
-                text = { Text("Copy Secret Key") },
-                onClick = { menuExpanded = false; onCopySecret() },
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "More options",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            DropdownMenuItem(
-                text = { Text("Show QR Code") },
-                onClick = { menuExpanded = false; onShowQr() },
-            )
-            DropdownMenuItem(
-                text = { Text("Edit") },
-                onClick = { menuExpanded = false; onEdit() },
-            )
-            DropdownMenuItem(
-                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                onClick = { menuExpanded = false; onDelete() },
-            )
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Copy Secret Key") },
+                    onClick = { menuExpanded = false; onCopySecret() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Show QR Code") },
+                    onClick = { menuExpanded = false; onShowQr() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    onClick = { menuExpanded = false; onEdit() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    onClick = { menuExpanded = false; onDelete() },
+                )
+            }
         }
     }
 }

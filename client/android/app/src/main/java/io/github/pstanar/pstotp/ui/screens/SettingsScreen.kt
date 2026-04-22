@@ -79,6 +79,29 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
+            if (viewModel != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                val showNextCode by viewModel.showNextCode.collectAsStateWithLifecycle()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Show upcoming code", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "In the last 10s, preview the next code; tap in the last 3s to copy it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = showNextCode,
+                        onCheckedChange = { viewModel.setShowNextCode(it) },
+                    )
+                }
+            }
+
             // Security
             if (viewModel != null) {
                 Spacer(modifier = Modifier.height(24.dp))

@@ -39,22 +39,29 @@ import io.github.pstanar.pstotp.core.model.VaultEntry
 @Composable
 fun TotpCard(
     entry: VaultEntry,
-    onCopy: (String) -> Unit,
+    onCopy: (code: String, isNext: Boolean) -> Unit,
     onCopySecret: () -> Unit,
     onShowQr: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     dragModifier: Modifier = Modifier,
     showDragHandle: Boolean = true,
+    showNextCode: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    // TOTP code — regenerate only at period boundaries
+    // TOTP code — regenerate only at period boundaries.
+    // Next code is the code for the step after the current one; used for
+    // the preview shown during the last 10s and for the "copy fresh code"
+    // behaviour when the user taps in the last 3s.
     var code by remember { mutableStateOf("") }
+    var nextCode by remember { mutableStateOf("") }
     var timeLeft by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(entry.secret, entry.period) {
+    LaunchedEffect(entry.secret, entry.period, entry.algorithm, entry.digits) {
         while (true) {
-            code = TotpGenerator.generate(entry.secret, entry.algorithm, entry.digits, entry.period)
+            val now = System.currentTimeMillis() / 1000
+            code = TotpGenerator.generate(entry.secret, entry.algorithm, entry.digits, entry.period, now)
+            nextCode = TotpGenerator.generate(entry.secret, entry.algorithm, entry.digits, entry.period, now + entry.period)
             timeLeft = TotpGenerator.timeRemaining(entry.period)
             delay(timeLeft * 1000L)
         }
@@ -77,8 +84,14 @@ fun TotpCard(
 
     // Copy is the primary action. Tap anywhere on the card (except the
     // menu IconButton, which consumes its own taps). Matches Authy UX.
+    // Within the last 3s we hand out the NEXT code so the user doesn't
+    // paste a code that expired mid-flow — the preview below makes this
+    // visible ahead of time.
     Card(
-        onClick = { onCopy(code) },
+        onClick = {
+            val useNext = showNextCode && timeLeft <= 3 && nextCode.isNotEmpty()
+            onCopy(if (useNext) nextCode else code, useNext)
+        },
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
@@ -192,6 +205,42 @@ fun TotpCard(
                         )
                     }
 
+                }
+
+                // Next-code preview — only in the last 10s so the card
+                // doesn't grow at rest. Faded to stay visually subordinate
+                // to the current code.
+                if (showNextCode && timeLeft <= 10 && nextCode.isNotEmpty()) {
+                    val previewColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    Row(
+                        modifier = Modifier.padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "next",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = previewColor,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        val (nextFirst, nextSecond) = splitCode(nextCode)
+                        Text(
+                            text = nextFirst,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 1.sp,
+                            color = previewColor,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = nextSecond,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 1.sp,
+                            color = previewColor,
+                        )
+                    }
                 }
             }
         }

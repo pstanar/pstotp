@@ -85,6 +85,7 @@ fun VaultScreen(
     val sortReversed by viewModel.sortReversed.collectAsStateWithLifecycle()
     val layoutMode by viewModel.layoutMode.collectAsStateWithLifecycle()
     val usage by viewModel.usage.collectAsStateWithLifecycle()
+    val showNextCode by viewModel.showNextCode.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var qrEntry by remember { mutableStateOf<VaultEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<VaultEntry?>(null) }
@@ -276,10 +277,16 @@ fun VaultScreen(
                 selectedEntry?.let { entry ->
                     TotpGridDetail(
                         entry = entry,
-                        onCopy = { code ->
-                            copyToClipboard(context, "TOTP Code", code, "Code copied")
+                        onCopy = { code, isNext ->
+                            copyToClipboard(
+                                context,
+                                "TOTP Code",
+                                code,
+                                if (isNext) "Next code copied" else "Code copied",
+                            )
                             viewModel.recordEntryUse(entry.id)
                         },
+                        showNextCode = showNextCode,
                     )
                     HorizontalDivider()
                 }
@@ -332,8 +339,13 @@ fun VaultScreen(
                         )
                         TotpCard(
                             entry = entry,
-                            onCopy = { code ->
-                                copyToClipboard(context, "TOTP Code", code, "Code copied")
+                            onCopy = { code, isNext ->
+                                copyToClipboard(
+                                    context,
+                                    "TOTP Code",
+                                    code,
+                                    if (isNext) "Next code copied" else "Code copied",
+                                )
                                 viewModel.recordEntryUse(entry.id)
                             },
                             onCopySecret = {
@@ -344,6 +356,7 @@ fun VaultScreen(
                             onDelete = { deleteEntry = entry },
                             dragModifier = Modifier.draggableHandle(),
                             showDragHandle = sortMode == SortMode.MANUAL,
+                            showNextCode = showNextCode,
                             modifier = Modifier.shadow(elevation, shape = MaterialTheme.shapes.medium),
                         )
                     }
