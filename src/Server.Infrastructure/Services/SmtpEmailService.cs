@@ -7,9 +7,15 @@ using PsTotp.Server.Application.Services;
 
 namespace PsTotp.Server.Infrastructure.Services;
 
-public class SmtpEmailService : IEmailService
+public partial class SmtpEmailService : IEmailService
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(10);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Verification email sent to {Email}")]
+    private partial void LogVerificationEmailSent(string email);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to send verification email to {Email}")]
+    private partial void LogVerificationEmailFailed(Exception ex, string email);
 
     private readonly ILogger<SmtpEmailService> _logger;
     private readonly string _host;
@@ -58,11 +64,11 @@ public class SmtpEmailService : IEmailService
             await client.ConnectAsync(_host, _port, tls, cts.Token);
             await client.AuthenticateAsync(_username, _password, cts.Token);
             await client.SendAsync(message, cts.Token);
-            _logger.LogInformation("Verification email sent to {Email}", email);
+            LogVerificationEmailSent(email);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send verification email to {Email}", email);
+            LogVerificationEmailFailed(ex, email);
             throw;
         }
         finally

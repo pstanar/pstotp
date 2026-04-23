@@ -13,11 +13,18 @@ public static class AdminEndpoints
         AppDbContext db,
         HttpContext httpContext)
     {
+        // EF Core can't translate Contains(string, StringComparison) to SQL,
+        // so the CA1304 / CA1311 / CA1862 analyzers' preferred forms don't
+        // work here. ToLower() without an explicit culture *does* translate —
+        // the database performs the lowercasing in its own collation, so the
+        // C#-level culture warning doesn't apply inside this query tree.
+#pragma warning disable CA1304, CA1311, CA1862
         var search = httpContext.Request.Query["search"].FirstOrDefault()?.ToLower();
 
         var query = db.Users.AsQueryable();
         if (!string.IsNullOrEmpty(search))
             query = query.Where(u => u.Email.ToLower().Contains(search));
+#pragma warning restore CA1304, CA1311, CA1862
 
         var totalCount = await query.CountAsync();
         var users = await query

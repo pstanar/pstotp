@@ -10,8 +10,11 @@ using PsTotp.Server.Infrastructure.Data;
 
 namespace PsTotp.Server.Api.EndPoints;
 
-public static class WebAuthnAssertionEndpoints
+public static partial class WebAuthnAssertionEndpoints
 {
+    [LoggerMessage(Level = LogLevel.Warning, Message = "WebAuthn assertion verification failed")]
+    private static partial void LogAssertionFailed(ILogger logger, Exception ex);
+
     private static readonly TimeSpan CeremonyExpiry = TimeSpan.FromMinutes(5);
 
     public static async Task<IResult> Begin(
@@ -130,7 +133,7 @@ public static class WebAuthnAssertionEndpoints
         }
         catch (Fido2VerificationException ex)
         {
-            loggerFactory.CreateLogger<IFido2>().LogWarning(ex, "WebAuthn assertion verification failed");
+            LogAssertionFailed(loggerFactory.CreateLogger<IFido2>(), ex);
             return Results.BadRequest(new { Error = "Passkey verification failed" });
         }
 

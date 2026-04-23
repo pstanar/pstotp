@@ -4,15 +4,18 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace PsTotp.Server.Api;
 
-public sealed class GlobalExceptionHandler(IHostEnvironment environment, ILogger<GlobalExceptionHandler> logger)
+public sealed partial class GlobalExceptionHandler(IHostEnvironment environment, ILogger<GlobalExceptionHandler> logger)
     : IExceptionHandler
 {
+    [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception")]
+    private partial void LogUnhandledException(Exception ex);
+
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
         Exception exception,
         CancellationToken cancellationToken)
     {
-        logger.LogError(exception, "Unhandled exception");
+        LogUnhandledException(exception);
 
         var problemDetails = new ProblemDetails
         {

@@ -388,3 +388,21 @@ dotnet_naming_style.s_camelcase.required_suffix =
 dotnet_naming_style.s_camelcase.word_separator = 
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
+
+# EF Core migration files are auto-generated; analyzer rules that care
+# about hot-path micro-optimisations don't apply to code that runs once
+# per schema change. Scope CA1861 off here so we don't chase warnings
+# in files we can't hand-edit without the next migration regen wiping
+# them back to the generator's preferred style.
+[**/Migrations/*.cs]
+dotnet_diagnostic.CA1861.severity = none
+
+# Test projects: underscored names are the standard MSTest convention
+# (Given_When_Then), and MSTest's [TestCleanup] handles the disposal
+# contract that CA1001 complains about — the `IDisposable`-shaped rule
+# fires on every test class that owns a SqliteConnection etc. CA1861's
+# hot-path concern is also moot in test code.
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1001.severity = none
+dotnet_diagnostic.CA1861.severity = none

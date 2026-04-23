@@ -5,4 +5,13 @@
   <PropertyGroup>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
+  <PropertyGroup>
+    <!--
+      Opt into the "Recommended" analyzer rule set on top of the
+      Microsoft.CodeAnalysis.NetAnalyzers package referenced by every
+      project. Combined with TreatWarningsAsErrors above this makes
+      the recommended diagnostics hard-fail the build.
+    -->
+    <AnalysisMode>Recommended</AnalysisMode>
+  </PropertyGroup>
 </Project>

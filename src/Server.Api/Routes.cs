@@ -9,6 +9,14 @@ public static class Routes
     private const string UserPolicy = AuthConstants.UserPolicy;
     private const string AdminPolicy = AuthConstants.AdminPolicy;
 
+    // Digital Asset Links relation list — identical per emitted statement,
+    // hoisted so the JSON builder doesn't re-allocate it on every request.
+    private static readonly string[] AssetLinksRelation =
+    [
+        "delegate_permission/common.handle_all_urls",
+        "delegate_permission/common.get_login_creds",
+    ];
+
     public static void MapRoutes(WebApplication app)
     {
         var publicApi = app.MapGroup(ApiPrefix);
@@ -173,7 +181,7 @@ public static class Routes
 
             var statements = fingerprints.Select(fp => new
             {
-                relation = new[] { "delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds" },
+                relation = AssetLinksRelation,
                 target = new
                 {
                     @namespace = "android_app",

@@ -7,12 +7,22 @@ using PsTotp.Server.Infrastructure.Data;
 
 namespace PsTotp.Server.Infrastructure.Services;
 
-public class SessionCleanupService(
+public partial class SessionCleanupService(
     IServiceScopeFactory scopeFactory,
     ILogger<SessionCleanupService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
     private static readonly TimeSpan CompletedRetention = TimeSpan.FromDays(30);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Session cleanup failed")]
+    private partial void LogCleanupFailed(Exception ex);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Cleanup: {Logins} login, {Registrations} registration, {Recovery} recovery, {OldRecovery} old recovery, {Ceremonies} ceremonies, {Tokens} tokens, {Entries} entries, {Devices} devices, {Envelopes} envelopes, {Credentials} credentials removed")]
+    private partial void LogCleanupSummary(
+        int logins, int registrations, int recovery, int oldRecovery, int ceremonies,
+        int tokens, int entries, int devices, int envelopes, int credentials);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,7 +34,7 @@ public class SessionCleanupService(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogError(ex, "Session cleanup failed");
+                LogCleanupFailed(ex);
             }
 
             await Task.Delay(Interval, stoppingToken);
@@ -100,9 +110,9 @@ public class SessionCleanupService(
                     + expiredCeremonies + oldTokens + deletedEntries + revokedDevices + revokedEnvelopes + revokedCredentials;
         if (total > 0)
         {
-            logger.LogInformation(
-                "Cleanup: {Logins} login, {Registrations} registration, {Recovery} recovery, {OldRecovery} old recovery, {Ceremonies} ceremonies, {Tokens} tokens, {Entries} entries, {Devices} devices, {Envelopes} envelopes, {Credentials} credentials removed",
-                expiredLogins, expiredRegistrations, expiredRecovery, oldRecovery, expiredCeremonies, oldTokens, deletedEntries, revokedDevices, revokedEnvelopes, revokedCredentials);
+            LogCleanupSummary(
+                expiredLogins, expiredRegistrations, expiredRecovery, oldRecovery, expiredCeremonies,
+                oldTokens, deletedEntries, revokedDevices, revokedEnvelopes, revokedCredentials);
         }
     }
 }

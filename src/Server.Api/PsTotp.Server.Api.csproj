@@ -28,6 +28,13 @@
     your dev Postgres / SQLite when regenerating.
   -->
   <PropertyGroup>
+    <!-- Off by default. Microsoft.Extensions.ApiDescription.Server otherwise
+         runs its GetDocument target on every Build / Publish — including
+         F5 / Debug builds from the IDE — which boots the app and hits the
+         configured database just to dump a schema. Turn on explicitly
+         via -p:GenerateOpenApi=true in build.sh / build.ps1. -->
+    <OpenApiGenerateDocuments>false</OpenApiGenerateDocuments>
+    <OpenApiGenerateDocumentsOnBuild>false</OpenApiGenerateDocumentsOnBuild>
     <OpenApiDocumentsDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../docs'))</OpenApiDocumentsDirectory>
     <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
   </PropertyGroup>

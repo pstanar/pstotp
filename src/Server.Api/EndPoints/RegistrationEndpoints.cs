@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using PsTotp.Server.Application.DTOs;
@@ -23,7 +24,7 @@ public static class RegistrationEndpoints
         if (activeSessions >= MaxRegistrationSessionsPerEmail)
             return Results.StatusCode(429);
 
-        var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+        var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString(CultureInfo.InvariantCulture);
 
         var session = new RegistrationSession
         {
