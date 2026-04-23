@@ -6,6 +6,8 @@ handling secrets, and backup.
 
 For development setup and coding workflow, see `docs/DEVELOPER.md`.
 For design and architecture context, see `docs/architecture/PLAN.md`.
+For the HTTP API that clients and integrators talk to, see
+`docs/API.md` (narrative) plus `docs/openapi.json` (schema).
 
 ## Release artifacts
 

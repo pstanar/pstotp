@@ -128,6 +128,10 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough.
   audit review, session lifecycle, recovery-session handling.
 - **[docs/CONFIG.md](docs/CONFIG.md)** — single-source reference for every
   configuration key.
+- **[docs/API.md](docs/API.md)** — HTTP API narrative (auth flows,
+  vault sync, optimistic concurrency, error model) with a pointer at
+  the committed OpenAPI schema (`docs/openapi.json`) for field-level
+  detail.
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — symptom → cause
   → fix lookup.
 - **[SECURITY.md](SECURITY.md)** — vulnerability disclosure policy, threat

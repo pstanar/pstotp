@@ -216,6 +216,13 @@ Endpoints are static methods on classes named `<Concern>Endpoints` in
 its collaborators as parameters (dependency injection via the ASP.NET
 minimal-API parameter binder), does its work, and returns an `IResult`.
 
+> See [`docs/API.md`](API.md) for the external-facing narrative of the
+> existing surface (auth flows, vault sync, error model, 409 recipe) and
+> [`docs/openapi.json`](openapi.json) for the field-level schema. After
+> you add or change an endpoint, `build.sh` / `build.ps1` will regen
+> `openapi.json` and fail if you forgot to commit the update —
+> if the shape changed for integrators, also update `API.md` by hand.
+
 General shape:
 
 ```csharp
