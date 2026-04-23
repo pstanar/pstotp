@@ -1,0 +1,1757 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "PsTotp.Server.Api | v1",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "PsTotp.Server.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/system/closing": {
+      "post": {
+        "tags": [
+          "SystemEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/register/begin": {
+      "post": {
+        "tags": [
+          "RegistrationEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/register/verify-email": {
+      "post": {
+        "tags": [
+          "RegistrationEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "RegistrationEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "LoginEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/login/complete": {
+      "post": {
+        "tags": [
+          "LoginEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": [
+          "TokenEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "TokenEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/password/reset/begin": {
+      "post": {
+        "tags": [
+          "PasswordResetEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginPasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/password/reset/verify": {
+      "post": {
+        "tags": [
+          "PasswordResetEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyPasswordResetCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/password/reset/complete": {
+      "post": {
+        "tags": [
+          "PasswordResetEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletePasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/recovery/codes/redeem": {
+      "post": {
+        "tags": [
+          "RecoveryFlowEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRedeemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/recovery/session/{sessionId}/material": {
+      "post": {
+        "tags": [
+          "RecoveryFlowEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryMaterialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/recovery/session/{sessionId}/complete": {
+      "post": {
+        "tags": [
+          "RecoveryFlowEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webauthn/assert/begin": {
+      "post": {
+        "tags": [
+          "WebAuthnAssertionEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnAssertBeginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webauthn/assert/complete": {
+      "post": {
+        "tags": [
+          "WebAuthnAssertionEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnAssertCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/vault": {
+      "get": {
+        "tags": [
+          "VaultEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/vault/{entryId}": {
+      "put": {
+        "tags": [
+          "VaultEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultEntryUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "VaultEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/vault/reorder": {
+      "post": {
+        "tags": [
+          "VaultEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/vault/icon-library": {
+      "get": {
+        "tags": [
+          "VaultIconLibraryEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "VaultIconLibraryEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconLibraryUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "tags": [
+          "DeviceEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/devices/{deviceId}/approve": {
+      "post": {
+        "tags": [
+          "DeviceEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/devices/{deviceId}/reject": {
+      "post": {
+        "tags": [
+          "DeviceEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/devices/{deviceId}/revoke": {
+      "post": {
+        "tags": [
+          "DeviceEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/devices/self/envelope": {
+      "put": {
+        "tags": [
+          "DeviceEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvelopeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/security/audit-events": {
+      "get": {
+        "tags": [
+          "AuditEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/account/vault/exported": {
+      "post": {
+        "tags": [
+          "AccountEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/account/vault/imported": {
+      "post": {
+        "tags": [
+          "AccountEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/account/password/change": {
+      "post": {
+        "tags": [
+          "AccountEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/recovery/codes/regenerate": {
+      "post": {
+        "tags": [
+          "RecoveryManagementEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryCodeRegenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/recovery/session/{sessionId}/cancel": {
+      "post": {
+        "tags": [
+          "RecoveryManagementEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webauthn/register/begin": {
+      "post": {
+        "tags": [
+          "WebAuthnRegistrationEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webauthn/register/complete": {
+      "post": {
+        "tags": [
+          "WebAuthnRegistrationEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnRegisterCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webauthn/credentials": {
+      "get": {
+        "tags": [
+          "WebAuthnManagementEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webauthn/credentials/{credentialId}/rename": {
+      "put": {
+        "tags": [
+          "WebAuthnManagementEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "credentialId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnRenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/webauthn/credentials/{credentialId}/revoke": {
+      "post": {
+        "tags": [
+          "WebAuthnManagementEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "credentialId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/system/info": {
+      "get": {
+        "tags": [
+          "SystemEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/system/shutdown": {
+      "post": {
+        "tags": [
+          "SystemEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/icon-proxy": {
+      "get": {
+        "tags": [
+          "IconProxyEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": [
+          "AdminEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/users/{userId}": {
+      "get": {
+        "tags": [
+          "AdminEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "AdminEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/users/{userId}/disable": {
+      "post": {
+        "tags": [
+          "AdminEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/users/{userId}/enable": {
+      "post": {
+        "tags": [
+          "AdminEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/users/{userId}/force-password-reset": {
+      "post": {
+        "tags": [
+          "AdminEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/users/{userId}/recovery-sessions/{sessionId}/cancel": {
+      "post": {
+        "tags": [
+          "AdminEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/backup": {
+      "post": {
+        "tags": [
+          "BackupEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/restore": {
+      "post": {
+        "tags": [
+          "BackupEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file",
+                  "password"
+                ],
+                "type": "object",
+                "allOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "$ref": "#/components/schemas/IFormFile"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "password": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApprovalAuth": {
+        "required": [
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "ApproveDeviceRequest": {
+        "required": [
+          "approvalRequestId",
+          "approvalAuth",
+          "deviceEnvelope"
+        ],
+        "type": "object",
+        "properties": {
+          "approvalRequestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvalAuth": {
+            "$ref": "#/components/schemas/ApprovalAuth"
+          },
+          "deviceEnvelope": {
+            "$ref": "#/components/schemas/EnvelopeDto"
+          }
+        }
+      },
+      "BackupRequest": {
+        "required": [
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "BeginPasswordResetRequest": {
+        "required": [
+          "email",
+          "device"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "device": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeviceDto"
+              }
+            ]
+          }
+        }
+      },
+      "BeginRegistrationRequest": {
+        "required": [
+          "email"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "CompletePasswordResetRequest": {
+        "required": [
+          "resetSessionId",
+          "newVerifier",
+          "newPasswordEnvelope"
+        ],
+        "type": "object",
+        "properties": {
+          "resetSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "newVerifier": {
+            "$ref": "#/components/schemas/PasswordVerifierDto"
+          },
+          "newPasswordEnvelope": {
+            "$ref": "#/components/schemas/EnvelopeDto"
+          }
+        }
+      },
+      "DeviceDto": {
+        "required": [
+          "deviceName",
+          "platform",
+          "clientType",
+          "devicePublicKey"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "clientType": {
+            "type": "string"
+          },
+          "devicePublicKey": {
+            "type": "string"
+          }
+        }
+      },
+      "EnvelopeDto": {
+        "required": [
+          "ciphertext",
+          "nonce",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "ciphertext": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "IconLibraryUpdateRequest": {
+        "required": [
+          "encryptedPayload",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "encryptedPayload": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "IFormFile": {
+        "type": "string",
+        "format": "binary"
+      },
+      "JsonElement": { },
+      "KdfConfigDto": {
+        "required": [
+          "algorithm",
+          "memoryMb",
+          "iterations",
+          "parallelism",
+          "salt"
+        ],
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "memoryMb": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "iterations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parallelism": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "salt": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginCompleteRequest": {
+        "required": [
+          "loginSessionId",
+          "clientProof"
+        ],
+        "type": "object",
+        "properties": {
+          "loginSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientProof": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginRequest": {
+        "required": [
+          "email",
+          "device"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "device": {
+            "$ref": "#/components/schemas/DeviceDto"
+          }
+        }
+      },
+      "PasswordChangeRequest": {
+        "required": [
+          "currentProof",
+          "newVerifier",
+          "newPasswordEnvelope"
+        ],
+        "type": "object",
+        "properties": {
+          "currentProof": {
+            "$ref": "#/components/schemas/VerifierProof"
+          },
+          "newVerifier": {
+            "$ref": "#/components/schemas/PasswordVerifierDto"
+          },
+          "newPasswordEnvelope": {
+            "$ref": "#/components/schemas/EnvelopeDto"
+          }
+        }
+      },
+      "PasswordVerifierDto": {
+        "required": [
+          "verifier",
+          "kdf"
+        ],
+        "type": "object",
+        "properties": {
+          "verifier": {
+            "type": "string"
+          },
+          "kdf": {
+            "$ref": "#/components/schemas/KdfConfigDto"
+          }
+        }
+      },
+      "RecoveryCodeRegenerateRequest": {
+        "required": [
+          "rotatedRecovery"
+        ],
+        "type": "object",
+        "properties": {
+          "rotatedRecovery": {
+            "$ref": "#/components/schemas/RecoveryDto"
+          }
+        }
+      },
+      "RecoveryCompleteRequest": {
+        "required": [
+          "replacementDeviceId",
+          "deviceEnvelope",
+          "rotatedRecovery"
+        ],
+        "type": "object",
+        "properties": {
+          "replacementDeviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceEnvelope": {
+            "$ref": "#/components/schemas/EnvelopeDto"
+          },
+          "rotatedRecovery": {
+            "$ref": "#/components/schemas/RecoveryDto"
+          }
+        }
+      },
+      "RecoveryDto": {
+        "required": [
+          "recoveryEnvelopeCiphertext",
+          "recoveryEnvelopeNonce",
+          "recoveryEnvelopeVersion",
+          "recoveryCodeHashes"
+        ],
+        "type": "object",
+        "properties": {
+          "recoveryEnvelopeCiphertext": {
+            "type": "string"
+          },
+          "recoveryEnvelopeNonce": {
+            "type": "string"
+          },
+          "recoveryEnvelopeVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "recoveryCodeHashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recoveryCodeSalt": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RecoveryMaterialRequest": {
+        "required": [
+          "replacementDevice"
+        ],
+        "type": "object",
+        "properties": {
+          "replacementDevice": {
+            "$ref": "#/components/schemas/DeviceDto"
+          }
+        }
+      },
+      "RecoveryRedeemRequest": {
+        "required": [
+          "email",
+          "recoveryCode",
+          "verifierProof"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "recoveryCode": {
+            "type": "string"
+          },
+          "verifierProof": {
+            "$ref": "#/components/schemas/VerifierProof"
+          }
+        }
+      },
+      "RefreshRequest": {
+        "required": [
+          "refreshToken"
+        ],
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RegisterRequest": {
+        "required": [
+          "registrationSessionId",
+          "email",
+          "passwordVerifier",
+          "passwordEnvelope",
+          "device",
+          "deviceEnvelope",
+          "recovery"
+        ],
+        "type": "object",
+        "properties": {
+          "registrationSessionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "passwordVerifier": {
+            "$ref": "#/components/schemas/PasswordVerifierDto"
+          },
+          "passwordEnvelope": {
+            "$ref": "#/components/schemas/EnvelopeDto"
+          },
+          "device": {
+            "$ref": "#/components/schemas/DeviceDto"
+          },
+          "deviceEnvelope": {
+            "$ref": "#/components/schemas/EnvelopeDto"
+          },
+          "recovery": {
+            "$ref": "#/components/schemas/RecoveryDto"
+          }
+        }
+      },
+      "VaultEntryUpsertRequest": {
+        "required": [
+          "entryPayload",
+          "entryVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "entryPayload": {
+            "type": "string"
+          },
+          "entryVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "VaultReorderRequest": {
+        "required": [
+          "entryIds"
+        ],
+        "type": "object",
+        "properties": {
+          "entryIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "VerifierProof": {
+        "required": [
+          "loginSessionId",
+          "clientProof"
+        ],
+        "type": "object",
+        "properties": {
+          "loginSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientProof": {
+            "type": "string"
+          }
+        }
+      },
+      "VerifyEmailRequest": {
+        "required": [
+          "registrationSessionId",
+          "verificationCode"
+        ],
+        "type": "object",
+        "properties": {
+          "registrationSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "verificationCode": {
+            "type": "string"
+          }
+        }
+      },
+      "VerifyPasswordResetCodeRequest": {
+        "required": [
+          "resetSessionId",
+          "verificationCode"
+        ],
+        "type": "object",
+        "properties": {
+          "resetSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "verificationCode": {
+            "type": "string"
+          }
+        }
+      },
+      "WebAuthnAssertBeginRequest": {
+        "required": [
+          "email",
+          "recoverySessionId"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recoverySessionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "WebAuthnAssertCompleteRequest": {
+        "required": [
+          "ceremonyId",
+          "assertionResponse",
+          "device"
+        ],
+        "type": "object",
+        "properties": {
+          "ceremonyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assertionResponse": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "device": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeviceDto"
+              }
+            ]
+          }
+        }
+      },
+      "WebAuthnRegisterCompleteRequest": {
+        "required": [
+          "ceremonyId",
+          "friendlyName",
+          "attestationResponse"
+        ],
+        "type": "object",
+        "properties": {
+          "ceremonyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "friendlyName": {
+            "type": "string"
+          },
+          "attestationResponse": {
+            "$ref": "#/components/schemas/JsonElement"
+          }
+        }
+      },
+      "WebAuthnRenameRequest": {
+        "required": [
+          "friendlyName"
+        ],
+        "type": "object",
+        "properties": {
+          "friendlyName": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "PsTotp.Server.Api"
+    },
+    {
+      "name": "SystemEndpoints"
+    },
+    {
+      "name": "RegistrationEndpoints"
+    },
+    {
+      "name": "LoginEndpoints"
+    },
+    {
+      "name": "TokenEndpoints"
+    },
+    {
+      "name": "PasswordResetEndpoints"
+    },
+    {
+      "name": "RecoveryFlowEndpoints"
+    },
+    {
+      "name": "WebAuthnAssertionEndpoints"
+    },
+    {
+      "name": "VaultEndpoints"
+    },
+    {
+      "name": "VaultIconLibraryEndpoints"
+    },
+    {
+      "name": "DeviceEndpoints"
+    },
+    {
+      "name": "AuditEndpoints"
+    },
+    {
+      "name": "AccountEndpoints"
+    },
+    {
+      "name": "RecoveryManagementEndpoints"
+    },
+    {
+      "name": "WebAuthnRegistrationEndpoints"
+    },
+    {
+      "name": "WebAuthnManagementEndpoints"
+    },
+    {
+      "name": "IconProxyEndpoints"
+    },
+    {
+      "name": "AdminEndpoints"
+    },
+    {
+      "name": "BackupEndpoints"
+    }
+  ]
+}

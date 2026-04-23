@@ -20,6 +20,30 @@ Write-Host "Version: $Version.$Build+$Sha"
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item $OutDir -ItemType Directory | Out-Null
 
+# OpenAPI export stale-check.
+#
+# Regenerate docs/openapi.json from the live endpoint metadata and fail
+# the build if it differs from what's committed — keeps integrators
+# from reading a stale schema. Needs the configured database reachable
+# (app startup runs migrations). Skipped inside the container build
+# (Dockerfile.build sets SKIP_OPENAPI_GEN=1) because it has no DB.
+if ($env:SKIP_OPENAPI_GEN) {
+    Write-Host "=== Skipping OpenAPI stale-check (SKIP_OPENAPI_GEN set) ==="
+} else {
+    Write-Host "=== Checking OpenAPI schema (docs/openapi.json) ==="
+    dotnet build $Project -c $Config -p:GenerateOpenApi=true -p:SkipSpa=true --nologo -v q
+    if ($LASTEXITCODE -ne 0) { throw "OpenAPI regeneration failed" }
+    git diff --quiet --exit-code "$ScriptDir\docs\openapi.json"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "ERROR: docs/openapi.json is out of date."
+        Write-Host "       Regenerated schema differs from the committed copy."
+        Write-Host "       Review the diff and commit the new openapi.json."
+        exit 1
+    }
+    Write-Host "    docs/openapi.json up to date."
+}
+
 # Build SPA once — all publishes reuse wwwroot
 Write-Host "`n=== Building SPA ==="
 Push-Location $SpaDir

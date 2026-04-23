@@ -18,6 +18,28 @@ echo "Version: $VERSION.$BUILD+$SHA"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
+# OpenAPI export stale-check.
+#
+# Regenerate docs/openapi.json from the live endpoint metadata and fail
+# the build if it differs from what's committed — keeps integrators
+# from reading a stale schema. Needs the configured database reachable
+# (app startup runs migrations). Skipped inside the container build
+# (Dockerfile.build sets SKIP_OPENAPI_GEN=1) because it has no DB.
+if [ -n "${SKIP_OPENAPI_GEN:-}" ]; then
+    echo "=== Skipping OpenAPI stale-check (SKIP_OPENAPI_GEN set) ==="
+else
+    echo "=== Checking OpenAPI schema (docs/openapi.json) ==="
+    dotnet build "$PROJECT" -c "$CONFIG" -p:GenerateOpenApi=true -p:SkipSpa=true --nologo -v q
+    if ! git diff --quiet --exit-code "$SCRIPT_DIR/docs/openapi.json"; then
+        echo ""
+        echo "ERROR: docs/openapi.json is out of date."
+        echo "       Regenerated schema differs from the committed copy."
+        echo "       Review the diff and commit the new openapi.json."
+        exit 1
+    fi
+    echo "    docs/openapi.json up to date."
+fi
+
 # Build SPA once — all publishes reuse wwwroot
 echo "=== Building SPA ==="
 (cd "$SPA_DIR" && npm ci && VITE_APP_VERSION="$VERSION+$SHA" npm run build:deploy)

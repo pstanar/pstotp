@@ -13,6 +13,28 @@
   <PropertyGroup>
     <SpaRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../client/web'))</SpaRoot>
   </PropertyGroup>
+
+  <!--
+    Build-time OpenAPI export. Microsoft.Extensions.ApiDescription.Server
+    drives Microsoft.AspNetCore.OpenApi's doc generator at build time and
+    writes the result to disk so we can commit a schema that's reliable
+    for integrators and client generators — the runtime Scalar UI at
+    /scalar/v1 is dev-only. build.sh's stale-check diffs the committed
+    copy against the regenerated one to catch schema drift.
+
+    Gated behind -p:GenerateOpenApi=true so normal `dotnet build` doesn't
+    boot the app just to dump a schema. Regen also needs the configured
+    database to be reachable, because app startup runs migrations — use
+    your dev Postgres / SQLite when regenerating.
+  -->
+  <PropertyGroup>
+    <OpenApiDocumentsDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../docs'))</OpenApiDocumentsDirectory>
+    <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(GenerateOpenApi)' == 'true'">
+    <OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>
+    <OpenApiGenerateDocumentsOnBuild>true</OpenApiGenerateDocumentsOnBuild>
+  </PropertyGroup>
   
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <WarningLevel>9999</WarningLevel>
@@ -35,6 +57,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.7" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.7">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.203">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
