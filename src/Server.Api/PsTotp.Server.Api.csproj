@@ -23,9 +23,9 @@
     copy against the regenerated one to catch schema drift.
 
     Gated behind -p:GenerateOpenApi=true so normal `dotnet build` doesn't
-    boot the app just to dump a schema. Regen also needs the configured
-    database to be reachable, because app startup runs migrations — use
-    your dev Postgres / SQLite when regenerating.
+    boot the app just to dump a schema. Pairs with PSTOTP_OPENAPI_EXPORT=1
+    (set by build.sh / build.ps1) which short-circuits the DB-touching
+    startup block in App.cs, so regen doesn't require a reachable DB.
   -->
   <PropertyGroup>
     <!-- Off by default. Microsoft.Extensions.ApiDescription.Server otherwise

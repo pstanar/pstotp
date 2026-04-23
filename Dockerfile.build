@@ -87,7 +87,7 @@ RUN mkdir -p "$ANDROID_HOME/cmdline-tools" \
 FROM tools AS build
 WORKDIR /src
 COPY . .
-RUN SKIP_DOCKER_IMAGE=1 SKIP_OPENAPI_GEN=1 ./build.sh
+RUN SKIP_DOCKER_IMAGE=1 ./build.sh
 
 # ---------------------------------------------------------------------------
 # Stage 3 — export

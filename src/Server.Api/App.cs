@@ -14,6 +14,16 @@ public static class App
 {
     public static void Configure(WebApplication app)
     {
+        // OpenAPI export mode: when set, the host is being booted only to
+        // hand its endpoint metadata to `dotnet-getdocument` so the build
+        // can dump the OpenAPI schema. Any init step that would touch the
+        // database (or any other external dependency the builder doesn't
+        // have) must honor this flag — otherwise the schema regen gate in
+        // build.sh / build.ps1 can't run in environments without a live
+        // DB, including Dockerfile.build. If you add a new DB-touching
+        // startup step, gate it on this flag too.
+        var isOpenApiExport = app.Configuration["PSTOTP_OPENAPI_EXPORT"] == "1";
+
         // Reverse-proxy setup: honor X-Forwarded-Proto/Host/For so the app knows
         // the original scheme (https) and client IP. Must run before any
         // middleware that consumes these values (auth cookies, redirects).
@@ -66,6 +76,9 @@ public static class App
                 await next();
             });
         }
+        // DB-touching startup work lives inside this block. Skipped under
+        // isOpenApiExport (see the comment at the top of Configure).
+        if (!isOpenApiExport)
         {
             using var scope = app.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
