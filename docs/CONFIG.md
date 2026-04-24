@@ -179,8 +179,26 @@ Array entries use index suffixes: `Fido2:Origins:0`, `Fido2:Origins:1`,
   server auto-generates one `android:apk-key-hash:...` origin per
   fingerprint and adds it to the allowed WebAuthn origins list.
 - Notes: You need the debug-keystore fingerprint for development and
-  the release-keystore fingerprint for production. `gradlew signingReport`
-  or `keytool -printcert -jarfile <apk>`.
+  (later) the release-keystore fingerprint for production.
+- **Committed debug-keystore fingerprint**: the repo ships a
+  reproducible debug keystore at `client/android/debug.keystore`
+  (password `android`, alias `androiddebugkey`) used by every debug
+  build — host `./gradlew`, `./build.sh`, and the container build via
+  `Dockerfile.build`. Paste this SHA-256 into `CertFingerprints` to
+  accept passkey sign-ins from any debug APK produced from this repo:
+
+  ```
+  5B:53:E3:3B:DA:79:31:29:47:B5:5C:7D:1B:63:E4:46:7D:45:7D:99:8E:8A:B5:8D:E6:2C:E9:F9:53:43:01:2A
+  ```
+
+  The key is intentionally public — same security posture Google takes
+  with Android Studio's auto-generated debug keystore. It is **not**
+  a release key; the release keystore + fingerprint will land when the
+  signed Play Store build does.
+- For a different keystore (your own release build, or a custom debug
+  keystore), extract the fingerprint with
+  `./gradlew :app:signingReport` or
+  `apksigner verify --print-certs <apk>`.
 
 ## CORS and hosting
 

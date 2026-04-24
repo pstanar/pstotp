@@ -36,6 +36,23 @@ android {
         versionName = gitVersionName(fallback = "1.0.0")
     }
 
+    signingConfigs {
+        // Pin the debug keystore to a repo-committed file so every build —
+        // host or container, yours or mine — produces an APK with the same
+        // signing identity. Without this, AGP auto-generates a random
+        // keystore per machine, which breaks Android passkey binding
+        // (assetlinks.json fingerprint goes stale on every rebuild) and
+        // blocks APK-over-APK upgrades. The password / alias are the
+        // standard Android Studio debug defaults — this key is public on
+        // purpose, same posture Google takes with its own debug keystore.
+        getByName("debug") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
