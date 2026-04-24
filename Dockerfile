@@ -11,8 +11,8 @@ RUN VITE_APP_VERSION=$APP_VERSION npm run build
 # shipped in the final image). Generated here so the Dockerfile doesn't
 # depend on `build.sh` having been run first.
 RUN mkdir -p /licenses/npm \
-    && npx --yes license-checker --production --json --out /licenses/npm/licenses.json \
-    && npx --yes license-checker --production --markdown --out /licenses/npm/licenses.md
+    && npx --yes license-checker-rseidelsohn --production --json --out /licenses/npm/licenses.json \
+    && npx --yes license-checker-rseidelsohn --production --markdown --out /licenses/npm/licenses.md
 
 # Stage 2: Build .NET backend
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build

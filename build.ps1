@@ -84,9 +84,9 @@ dotnet dotnet-project-licenses @LicenseCommon --md
 # npm dependencies (production only — devDependencies aren't shipped).
 Push-Location $SpaDir
 try {
-    npx --yes license-checker --production --json `
+    npx --yes license-checker-rseidelsohn --production --json `
         --out "$LicensesDir\npm\licenses.json"
-    npx --yes license-checker --production --markdown `
+    npx --yes license-checker-rseidelsohn --production --markdown `
         --out "$LicensesDir\npm\licenses.md"
 } finally {
     Pop-Location

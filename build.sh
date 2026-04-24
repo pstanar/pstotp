@@ -61,9 +61,9 @@ dotnet dotnet-project-licenses "${LICENSE_COMMON[@]}" --json
 dotnet dotnet-project-licenses "${LICENSE_COMMON[@]}" --md
 
 # npm dependencies (production only — devDependencies aren't shipped).
-(cd "$SPA_DIR" && npx --yes license-checker --production --json \
+(cd "$SPA_DIR" && npx --yes license-checker-rseidelsohn --production --json \
     --out "$LICENSES_DIR/npm/licenses.json")
-(cd "$SPA_DIR" && npx --yes license-checker --production --markdown \
+(cd "$SPA_DIR" && npx --yes license-checker-rseidelsohn --production --markdown \
     --out "$LICENSES_DIR/npm/licenses.md")
 
 cat > "$LICENSES_DIR/README.md" <<EOF
