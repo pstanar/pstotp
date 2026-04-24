@@ -24,15 +24,25 @@ formats**, **real multi-device sync without trusting a SaaS**, and a working
 
 ## Screenshots
 
-<!-- Replace placeholders with real screenshots under docs/images/ -->
+### Web
 
-| Vault list (web) | Vault grid (Android) |
+| Vault list | Account |
 | :--: | :--: |
-| _screenshot pending — docs/images/vault-list.png_ | _screenshot pending — docs/images/vault-grid.png_ |
+| <a href="docs/images/vault-list-web.png"><img src="docs/images/vault-list-web.png" alt="Vault list — web" width="400"></a> | <a href="docs/images/account-web.png"><img src="docs/images/account-web.png" alt="Account settings — web" width="400"></a> |
 
-| First-time setup | Unlock |
+| Devices | Admin |
 | :--: | :--: |
-| _screenshot pending — docs/images/setup.png_ | _screenshot pending — docs/images/unlock.png_ |
+| <a href="docs/images/devices-web.png"><img src="docs/images/devices-web.png" alt="Device management — web" width="400"></a> | <a href="docs/images/admin-web.png"><img src="docs/images/admin-web.png" alt="Admin console — web" width="400"></a> |
+
+### Android
+
+| First-time setup | Connect to server |
+| :--: | :--: |
+| <a href="docs/images/setup.png"><img src="docs/images/setup.png" alt="First-time setup — Android" width="280"></a> | <a href="docs/images/connect-android.png"><img src="docs/images/connect-android.png" alt="Connect to server — Android" width="280"></a> |
+
+| Vault (grid) | Settings |
+| :--: | :--: |
+| <a href="docs/images/vault-grid.png"><img src="docs/images/vault-grid.png" alt="Vault grid — Android" width="280"></a> | <a href="docs/images/settings-android.png"><img src="docs/images/settings-android.png" alt="Settings — Android" width="280"></a> |
 
 ## Features
 
