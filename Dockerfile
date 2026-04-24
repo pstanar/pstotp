@@ -18,8 +18,13 @@ RUN mkdir -p /licenses/npm \
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
-# Copy project files for NuGet restore (layer cache)
-COPY nuget.config Directory.Build.props ./
+# Copy project files for NuGet restore (layer cache).
+# .editorconfig has to land here too — the scoped analyzer
+# suppressions (CA1861 off under **/Migrations/*.cs, CA1707 / CA1001
+# off under tests/**) only take effect if Roslyn can see the file
+# during `dotnet publish`. Without it, Recommended-rule-set errors
+# from generated migration code fail the build.
+COPY nuget.config Directory.Build.props .editorconfig ./
 COPY src/Server.Api/PsTotp.Server.Api.csproj                                           src/Server.Api/
 COPY src/Server.Application/PsTotp.Server.Application.csproj                           src/Server.Application/
 COPY src/Server.Domain/PsTotp.Server.Domain.csproj                                     src/Server.Domain/

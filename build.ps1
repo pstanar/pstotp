@@ -122,6 +122,7 @@ if ($env:SKIP_DOCKER_IMAGE) {
 } else {
     Write-Host "`n=== Building Docker image ==="
     docker build --build-arg "APP_VERSION=$Version+$Sha" -t pstotp -t "pstotp:$Version" $ScriptDir
+    if ($LASTEXITCODE -ne 0) { throw "docker build failed (exit $LASTEXITCODE)" }
 }
 
 # Platform publishes
