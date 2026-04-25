@@ -197,7 +197,10 @@ export function generateRecoveryCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No I/O/0/1 to avoid confusion
   const bytes = generateRandomBytes(10);
   let code = "";
-  for (const b of bytes) code += chars[b % chars.length];
+  // Bitmask instead of modulo: `b % n` on a crypto byte produces biased results
+  // unless 256 is divisible by n. The bitmask `b & (n-1)` is unbiased when n is
+  // a power of 2 — chars.length must stay 32 (2^5) for this to hold.
+  for (const b of bytes) code += chars[b & (chars.length - 1)];
   return code;
 }
 
