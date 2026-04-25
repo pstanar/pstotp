@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -52,6 +53,8 @@ class MainActivity : FragmentActivity() {
             PsTotpTheme(dynamicColor = useSystemColors) {
                 val isSetUp by viewModel.isSetUp.collectAsStateWithLifecycle()
 
+                val isUnlocked by viewModel.isUnlocked.collectAsStateWithLifecycle()
+
                 // Register lifecycle observer for auto-lock
                 if (lifecycleObserver == null) {
                     lifecycleObserver = AppLifecycleObserver(
@@ -59,7 +62,7 @@ class MainActivity : FragmentActivity() {
                         onForeground = {
                             val duration = lifecycleObserver?.getBackgroundDurationMs() ?: 0
                             val timeout = viewModel.lockTimeoutMs.value
-                            if (duration > timeout && viewModel.isUnlocked) {
+                            if (duration > timeout && viewModel.isUnlocked.value) {
                                 viewModel.lock()
                             }
                         },
@@ -82,10 +85,29 @@ class MainActivity : FragmentActivity() {
                         val startDestination = remember(isSetUp) {
                             when {
                                 isSetUp != true -> Routes.SETUP
-                                viewModel.isUnlocked -> Routes.VAULT
+                                viewModel.isUnlocked.value -> Routes.VAULT
                                 else -> Routes.UNLOCK
                             }
                         }
+
+                        // Auto-lock redirect. lock() clears the vault key
+                        // but doesn't navigate; without this, the user
+                        // returning from background after the inactivity
+                        // timeout sees /vault rendering its empty-state
+                        // ("Welcome to PsTotp") instead of being asked to
+                        // unlock. Skip while still on /setup so the
+                        // first-run flow isn't hijacked.
+                        LaunchedEffect(isUnlocked, isSetUp) {
+                            if (isSetUp == true && !isUnlocked &&
+                                navController.currentDestination?.route != Routes.UNLOCK
+                            ) {
+                                navController.navigate(Routes.UNLOCK) {
+                                    popUpTo(0) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            }
+                        }
+
                         AppNavGraph(
                             navController = navController,
                             startDestination = startDestination,

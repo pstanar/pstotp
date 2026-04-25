@@ -4,8 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import io.github.pstanar.pstotp.core.api.IconLibraryApi
 import io.github.pstanar.pstotp.core.crypto.KeystoreHelper
@@ -70,7 +73,14 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
     val usage: StateFlow<Map<String, EntryUsageEntity>> = _usage.asStateFlow()
 
     private val _vaultKey = MutableStateFlow<ByteArray?>(null)
-    val isUnlocked: Boolean get() = _vaultKey.value != null
+    /**
+     * Reactive unlock state. Anyone who needs to react to lock() flipping
+     * the vault closed (e.g. nav redirecting away from /vault on auto-lock)
+     * collects this. Synchronous callers can still read `.value`.
+     */
+    val isUnlocked: StateFlow<Boolean> = _vaultKey
+        .map { it != null }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun getVaultKey(): ByteArray? = _vaultKey.value
 
