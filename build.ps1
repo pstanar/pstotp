@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = $PSScriptRoot
-$Project   = "$ScriptDir\src\Server.Api\PsTotp.Server.Api.csproj"
-$SpaDir    = "$ScriptDir\client\web"
-$OutDir    = "$ScriptDir\publish"
+$Project   = "$ScriptDir/src/Server.Api/PsTotp.Server.Api.csproj"
+$SpaDir    = "$ScriptDir/client/web"
+$OutDir    = "$ScriptDir/publish"
 $Config    = 'Release'
 
 $Rids = @('win-x64', 'linux-x64', 'osx-arm64')
@@ -35,7 +35,7 @@ try {
     Remove-Item Env:\PSTOTP_OPENAPI_EXPORT -ErrorAction SilentlyContinue
 }
 if ($LASTEXITCODE -ne 0) { throw "OpenAPI regeneration failed" }
-git diff --quiet --exit-code "$ScriptDir\docs\openapi.json"
+git diff --quiet --exit-code -- "$ScriptDir/docs/openapi.json"
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERROR: docs/openapi.json is out of date."
@@ -62,9 +62,9 @@ try {
 # clauses most of our transitive dependencies (MIT / BSD / Apache / MPL / …)
 # require when you redistribute binaries.
 Write-Host "`n=== Generating third-party license manifests ==="
-$LicensesDir = "$OutDir\licenses"
-New-Item "$LicensesDir\nuget" -ItemType Directory -Force | Out-Null
-New-Item "$LicensesDir\npm"   -ItemType Directory -Force | Out-Null
+$LicensesDir = "$OutDir/licenses"
+New-Item "$LicensesDir/nuget" -ItemType Directory -Force | Out-Null
+New-Item "$LicensesDir/npm"   -ItemType Directory -Force | Out-Null
 
 # NuGet dependencies, transitive included, via the local tool manifest.
 # dotnet-project-licenses doesn't parse .slnx yet, so we point it at the
@@ -74,12 +74,12 @@ New-Item "$LicensesDir\npm"   -ItemType Directory -Force | Out-Null
 # dotnet-project-licenses targets net7.0; DOTNET_ROLL_FORWARD=LatestMajor
 # lets the .NET 10 host run it without a separate runtime installation.
 dotnet tool restore
-dotnet restore "$ScriptDir\PsTotp.slnx"
+dotnet restore "$ScriptDir/PsTotp.slnx"
 $LicenseCommon = @(
-    '--input', "$ScriptDir\src",
+    '--input', "$ScriptDir/src",
     '--include-transitive',
     '--unique',
-    '--output-directory', "$LicensesDir\nuget"
+    '--output-directory', "$LicensesDir/nuget"
 )
 $env:DOTNET_ROLL_FORWARD = 'LatestMajor'
 try {
@@ -93,9 +93,9 @@ try {
 Push-Location $SpaDir
 try {
     npx --yes license-checker-rseidelsohn --production --json `
-        --out "$LicensesDir\npm\licenses.json"
+        --out "$LicensesDir/npm/licenses.json"
     npx --yes license-checker-rseidelsohn --production --markdown `
-        --out "$LicensesDir\npm\licenses.md"
+        --out "$LicensesDir/npm/licenses.md"
 } finally {
     Pop-Location
 }
@@ -118,7 +118,7 @@ PsTotp itself is licensed under Apache 2.0 — see ``/LICENSE``.
 
 Generated from commit $Sha on $Today.
 "@
-Set-Content -Path "$LicensesDir\README.md" -Value $ReadmeContent
+Set-Content -Path "$LicensesDir/README.md" -Value $ReadmeContent
 
 # Docker image.
 #
@@ -149,21 +149,21 @@ foreach ($Rid in $Rids) {
             "-p:Version=$Version" `
             "-p:FileVersion=$Version.$Build" `
             "-p:SourceRevisionId=$Sha" `
-            -o "$OutDir\$Name"
+            -o "$OutDir/$Name"
 
         # Ship the third-party license manifests inside each archive so
         # redistribution satisfies attribution requirements out of the box.
-        Copy-Item -Recurse $LicensesDir "$OutDir\$Name\licenses"
+        Copy-Item -Recurse $LicensesDir "$OutDir/$Name/licenses"
 
         # Archive: zip for Windows, tar.gz for Linux/macOS
         Write-Host "    Archiving $Name..."
         if ($Rid.StartsWith('win-')) {
-            Compress-Archive -Path "$OutDir\$Name" -DestinationPath "$OutDir\$Name.zip"
+            Compress-Archive -Path "$OutDir/$Name" -DestinationPath "$OutDir/$Name.zip"
         } else {
-            tar -czf "$OutDir\$Name.tar.gz" -C $OutDir $Name
+            tar -czf "$OutDir/$Name.tar.gz" -C $OutDir $Name
         }
 
-        Remove-Item "$OutDir\$Name" -Recurse -Force
+        Remove-Item "$OutDir/$Name" -Recurse -Force
     }
 }
 
@@ -176,28 +176,40 @@ foreach ($Rid in $Rids) {
 # skip the step rather than fail, so server-only build hosts still work.
 if ($env:ANDROID_HOME -or $env:ANDROID_SDK_ROOT) {
     Write-Host "`n=== Building Android APK (debug) ==="
-    $AndroidDir = "$ScriptDir\client\android"
+    $AndroidDir = "$ScriptDir/client/android"
 
     # Gradle 9 + AGP 8.13 need JDK 17+. If the user hasn't set JAVA_HOME
     # we fall back to Android Studio's bundled JBR on the usual paths —
     # the common case for Android devs.
     if (-not $env:JAVA_HOME) {
-        $studioJbr = 'C:\Program Files\Android\Android Studio\jbr'
-        if (Test-Path $studioJbr) {
-            $env:JAVA_HOME = $studioJbr
-            Write-Host "    Using Android Studio JBR: $env:JAVA_HOME"
+        $candidates = if ($IsWindows) {
+            @('C:/Program Files/Android/Android Studio/jbr')
+        } else {
+            @(
+                '/Applications/Android Studio.app/Contents/jbr/Contents/Home',
+                '/opt/android-studio/jbr',
+                "$HOME/android-studio/jbr"
+            )
+        }
+        foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+                $env:JAVA_HOME = $candidate
+                Write-Host "    Using Android Studio JBR: $env:JAVA_HOME"
+                break
+            }
         }
     }
 
+    $gradlew = if ($IsWindows) { "$AndroidDir/gradlew.bat" } else { "$AndroidDir/gradlew" }
     Push-Location $AndroidDir
     try {
-        & "$AndroidDir\gradlew.bat" --no-daemon :app:assembleDebug
+        & $gradlew --no-daemon :app:assembleDebug
         if ($LASTEXITCODE -ne 0) { throw "Gradle assembleDebug failed" }
     } finally {
         Pop-Location
     }
-    $ApkSrc = "$AndroidDir\app\build\outputs\apk\debug\app-debug.apk"
-    $ApkDst = "$OutDir\pstotp-$Version-android-debug.apk"
+    $ApkSrc = "$AndroidDir/app/build/outputs/apk/debug/app-debug.apk"
+    $ApkDst = "$OutDir/pstotp-$Version-android-debug.apk"
     Copy-Item $ApkSrc $ApkDst
     Write-Host "    $ApkDst"
 } else {
@@ -206,16 +218,16 @@ if ($env:ANDROID_HOME -or $env:ANDROID_SDK_ROOT) {
 
 # SHA-256 checksums
 Write-Host "`n=== Generating checksums ==="
-$archives = Get-ChildItem "$OutDir\pstotp-*"
+$archives = Get-ChildItem "$OutDir/pstotp-*"
 $checksums = foreach ($file in $archives) {
     $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
     "$hash  $($file.Name)"
 }
-$checksums | Set-Content "$OutDir\SHA256SUMS"
+$checksums | Set-Content "$OutDir/SHA256SUMS"
 $checksums | Write-Host
 
 Write-Host "`n=== Done ==="
 if (-not $env:SKIP_DOCKER_IMAGE) {
     Write-Host "Docker image: pstotp:latest"
 }
-Write-Host "Archives + checksums in $OutDir\"
+Write-Host "Archives + checksums in $OutDir/"
