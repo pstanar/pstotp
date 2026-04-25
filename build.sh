@@ -53,12 +53,15 @@ mkdir -p "$LICENSES_DIR/nuget" "$LICENSES_DIR/npm"
 # dotnet-project-licenses doesn't parse .slnx yet, so we point it at the
 # src folder; it walks project files from there. It also writes one
 # format per invocation, so we call it twice.
+#
+# dotnet-project-licenses targets net7.0; DOTNET_ROLL_FORWARD=LatestMajor
+# lets the .NET 10 host run it without a separate runtime installation.
 dotnet tool restore
 dotnet restore "$SCRIPT_DIR/PsTotp.slnx"
 LICENSE_COMMON=(--input "$SCRIPT_DIR/src" --include-transitive --unique \
     --output-directory "$LICENSES_DIR/nuget")
-dotnet dotnet-project-licenses "${LICENSE_COMMON[@]}" --json
-dotnet dotnet-project-licenses "${LICENSE_COMMON[@]}" --md
+DOTNET_ROLL_FORWARD=LatestMajor dotnet dotnet-project-licenses "${LICENSE_COMMON[@]}" --json
+DOTNET_ROLL_FORWARD=LatestMajor dotnet dotnet-project-licenses "${LICENSE_COMMON[@]}" --md
 
 # npm dependencies (production only — devDependencies aren't shipped).
 (cd "$SPA_DIR" && npx --yes license-checker-rseidelsohn --production --json \

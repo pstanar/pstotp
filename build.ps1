@@ -70,6 +70,9 @@ New-Item "$LicensesDir\npm"   -ItemType Directory -Force | Out-Null
 # dotnet-project-licenses doesn't parse .slnx yet, so we point it at the
 # src folder; it walks project files from there. It also writes one
 # format per invocation, so we call it twice.
+#
+# dotnet-project-licenses targets net7.0; DOTNET_ROLL_FORWARD=LatestMajor
+# lets the .NET 10 host run it without a separate runtime installation.
 dotnet tool restore
 dotnet restore "$ScriptDir\PsTotp.slnx"
 $LicenseCommon = @(
@@ -78,8 +81,13 @@ $LicenseCommon = @(
     '--unique',
     '--output-directory', "$LicensesDir\nuget"
 )
-dotnet dotnet-project-licenses @LicenseCommon --json
-dotnet dotnet-project-licenses @LicenseCommon --md
+$env:DOTNET_ROLL_FORWARD = 'LatestMajor'
+try {
+    dotnet dotnet-project-licenses @LicenseCommon --json
+    dotnet dotnet-project-licenses @LicenseCommon --md
+} finally {
+    Remove-Item Env:\DOTNET_ROLL_FORWARD -ErrorAction SilentlyContinue
+}
 
 # npm dependencies (production only — devDependencies aren't shipped).
 Push-Location $SpaDir
