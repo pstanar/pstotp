@@ -199,14 +199,14 @@ export function AddAccountDialog({ open, onClose, onAdd }: AddAccountDialogProps
             if (!p || p <= 0) { setError("Period must be a positive number"); return; }
             onAdd({
               issuer: issuer.trim() || "Unknown",
-              accountName: accountName.trim() || issuer.trim() || "Account",
+              accountName: accountName.trim(),
               secret: s.toUpperCase(), algorithm, digits: d, period: p,
             });
             reset(); onClose();
           }} className="space-y-4">
             <Input id="issuer" type="text" label="Service Name" value={issuer}
               onChange={(e) => setIssuer(e.target.value)} placeholder="Google, GitHub, etc." autoFocus />
-            <Input id="account-name" type="text" label="Account" value={accountName}
+            <Input id="account-name" type="text" label="Account (optional)" value={accountName}
               onChange={(e) => setAccountName(e.target.value)} placeholder="alice@example.com" />
             <Input id="secret-key" type="text" required label="Secret Key" value={secret}
               onChange={(e) => setSecret(e.target.value)} className="font-mono" placeholder="JBSWY3DPEHPK3PXP" />

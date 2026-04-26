@@ -75,7 +75,7 @@ fun EditAccountScreen(
             OutlinedTextField(
                 value = accountName,
                 onValueChange = { accountName = it },
-                label = { Text("Account") },
+                label = { Text("Account (optional)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -97,7 +97,7 @@ fun EditAccountScreen(
                     viewModel.updateEntry(
                         entry.copy(
                             issuer = issuer.trim().ifEmpty { "Unknown" },
-                            accountName = accountName.trim().ifEmpty { "Account" },
+                            accountName = accountName.trim(),
                             icon = icon,
                         ),
                         onComplete = onSaved,

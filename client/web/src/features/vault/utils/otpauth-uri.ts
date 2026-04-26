@@ -1,7 +1,10 @@
 import type { VaultEntryPlaintext } from "@/types/vault-types";
 
 export function buildOtpauthUri(entry: VaultEntryPlaintext): string {
-  const label = encodeURIComponent(entry.accountName);
+  // Fall back to the issuer when the account is blank — `otpauth://totp/?…`
+  // with an empty path segment isn't accepted by every importer, and the
+  // account is now genuinely optional from the user's POV.
+  const label = encodeURIComponent(entry.accountName || entry.issuer || "Account");
 
   const params = new URLSearchParams();
   params.set("secret", entry.secret);

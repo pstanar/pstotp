@@ -241,7 +241,7 @@ internal fun ManualEntryTab(viewModel: VaultViewModel, onAccountAdded: () -> Uni
             viewModel.addEntry(
                 VaultEntryPlaintext(
                     issuer = issuer.trim().ifEmpty { "Unknown" },
-                    accountName = accountName.trim().ifEmpty { issuer.trim().ifEmpty { "Account" } },
+                    accountName = accountName.trim(),
                     secret = trimmedSecret.uppercase(),
                     algorithm = algorithm,
                     digits = d,

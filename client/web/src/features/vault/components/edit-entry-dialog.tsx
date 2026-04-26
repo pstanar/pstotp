@@ -101,7 +101,7 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
     e.preventDefault();
     onSave({
       issuer: issuer.trim() || "Unknown",
-      accountName: accountName.trim() || "Account",
+      accountName: accountName.trim(),
       icon,
     });
     onClose();
@@ -116,7 +116,7 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input id="edit-issuer" type="text" label="Service Name" value={issuer}
             onChange={(e) => setIssuer(e.target.value)} autoFocus />
-          <Input id="edit-account" type="text" label="Account" value={accountName}
+          <Input id="edit-account" type="text" label="Account (optional)" value={accountName}
             onChange={(e) => setAccountName(e.target.value)} />
 
           <div>

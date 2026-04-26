@@ -405,7 +405,7 @@ export function VaultPage() {
           open={true}
           onClose={() => { setShowQr(false); setQrEntryId(null); }}
           uri={buildOtpauthUri(qrEntry)}
-          title={`${qrEntry.issuer} — ${qrEntry.accountName}`}
+          title={qrEntry.accountName ? `${qrEntry.issuer} — ${qrEntry.accountName}` : qrEntry.issuer}
         />
       )}
 
