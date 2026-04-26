@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/css-utils";
 
@@ -11,8 +11,6 @@ interface DialogProps {
 }
 
 export function Dialog({ open, onClose, title, className, children }: DialogProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!open) return;
     const handleEsc = (e: KeyboardEvent) => {
@@ -25,16 +23,12 @@ export function Dialog({ open, onClose, title, className, children }: DialogProp
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] animate-in fade-in duration-150"
-      onClick={(e) => {
-        if (contentRef.current && !contentRef.current.contains(e.target as Node)) {
-          onClose();
-        }
-      }}
-    >
+    // Backdrop click is intentionally NOT a dismiss action. Every dialog
+    // ships its own explicit Cancel / X / Save buttons, and Escape still
+    // closes — so an accidental click outside the panel doesn't silently
+    // discard whatever the user was editing.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] animate-in fade-in duration-150">
       <div
-        ref={contentRef}
         className={cn(
           "bg-background mx-4 w-full max-w-md rounded-lg border shadow-xl",
           "animate-in zoom-in-95 slide-in-from-bottom-2 duration-200",
