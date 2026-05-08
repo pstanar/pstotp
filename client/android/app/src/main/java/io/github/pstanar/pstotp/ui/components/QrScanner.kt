@@ -38,6 +38,8 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * QR code scanner using CameraX + ML Kit.
@@ -59,7 +61,12 @@ fun QrScanner(
             ) == PackageManager.PERMISSION_GRANTED
         )
     }
-    var detected by remember { mutableStateOf(false) }
+    // AtomicBoolean (not Compose state) so the analyzer thread and
+    // ML Kit's main-thread success listener observe writes through
+    // the same memory-ordered cell. compareAndSet on first match
+    // also guarantees onResult fires at most once even when frames
+    // F1 and F2 are both in flight when F1's match lands.
+    val detected = remember { AtomicBoolean(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -91,23 +98,36 @@ fun QrScanner(
         return
     }
 
-    // Hoist the three disposable resources out of the factory lambda
-    // so DisposableEffect can release them when the AndroidView leaves
-    // composition (e.g. user switches tabs in AddAccountScreen). Before
-    // this, switching away from the QR tab held the camera, the ML Kit
-    // scanner client, and a single-thread executor for the lifetime of
-    // the activity.
+    // Hoist the disposable resources out of the factory lambda so
+    // DisposableEffect can release them when the AndroidView leaves
+    // composition (e.g. user switches tabs in AddAccountScreen).
+    //
+    // Race-resistance: the analyzer runs on the executor thread, the
+    // success listener runs on main, and the cameraProviderFuture
+    // listener fires whenever the future resolves. Any of those can
+    // fire AFTER dispose. `disposed` is the single source of truth
+    // every async path checks before doing anything that could touch
+    // a torn-down resource (camera bind, scanner.process, onResult).
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val executor = remember { Executors.newSingleThreadExecutor() }
     val scanner = remember { BarcodeScanning.getClient() }
+    val disposed = remember { AtomicBoolean(false) }
+    // Held so dispose can call clearAnalyzer() — created inside the
+    // future's listener, so we can't capture it directly in the effect.
+    val imageAnalysisRef = remember { AtomicReference<ImageAnalysis?>() }
 
     DisposableEffect(Unit) {
         onDispose {
-            // Each step independently — a teardown failure in one
-            // shouldn't mask the others. `isDone` guards against the
-            // case where the future hadn't resolved yet (camera was
-            // never bound, so there's nothing to unbind).
+            disposed.set(true)
+            // clearAnalyzer first: tells CameraX to stop dispatching
+            // frames to our executor. New analyzer invocations stop
+            // here. In-flight ones still need the disposed-check guard
+            // inside the analyzer body.
+            runCatching { imageAnalysisRef.get()?.clearAnalyzer() }
             runCatching {
+                // `isDone` guards against the case where the future
+                // hadn't resolved yet (camera was never bound, so
+                // there's nothing to unbind).
                 if (cameraProviderFuture.isDone) cameraProviderFuture.get().unbindAll()
             }
             runCatching { scanner.close() }
@@ -127,6 +147,9 @@ fun QrScanner(
             }
 
             cameraProviderFuture.addListener({
+                // Listener may fire AFTER unmount if the future
+                // resolves late. Don't bind to a lifecycle that's gone.
+                if (disposed.get()) return@addListener
                 val cameraProvider = cameraProviderFuture.get()
 
                 val preview = Preview.Builder().build().also {
@@ -147,34 +170,47 @@ fun QrScanner(
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
 
+                imageAnalysisRef.set(imageAnalysis)
+
                 imageAnalysis.setAnalyzer(executor) { imageProxy ->
                     @androidx.camera.core.ExperimentalGetImage
                     val mediaImage = imageProxy.image
-                    if (mediaImage != null && !detected) {
-                        val inputImage = InputImage.fromMediaImage(
-                            mediaImage, imageProxy.imageInfo.rotationDegrees
-                        )
+                    if (disposed.get() || mediaImage == null || detected.get()) {
+                        imageProxy.close()
+                        return@setAnalyzer
+                    }
+                    val inputImage = InputImage.fromMediaImage(
+                        mediaImage, imageProxy.imageInfo.rotationDegrees
+                    )
+                    // scanner.process can throw if the scanner has been
+                    // closed by a dispose that landed between the
+                    // disposed-check above and this call. runCatching
+                    // absorbs that; the onFailure path closes the
+                    // imageProxy so we don't leak frames.
+                    runCatching {
                         scanner.process(inputImage)
                             .addOnSuccessListener { barcodes ->
+                                if (disposed.get()) return@addOnSuccessListener
                                 for (barcode in barcodes) {
                                     if (barcode.valueType == Barcode.TYPE_TEXT ||
                                         barcode.valueType == Barcode.TYPE_URL
                                     ) {
                                         val value = barcode.rawValue ?: continue
                                         if (value.startsWith("otpauth://")) {
-                                            detected = true
-                                            onResult(value)
+                                            // First match wins — second
+                                            // racing frame sees detected
+                                            // already true and skips
+                                            // onResult.
+                                            if (detected.compareAndSet(false, true)) {
+                                                onResult(value)
+                                            }
                                             return@addOnSuccessListener
                                         }
                                     }
                                 }
                             }
-                            .addOnCompleteListener {
-                                imageProxy.close()
-                            }
-                    } else {
-                        imageProxy.close()
-                    }
+                            .addOnCompleteListener { imageProxy.close() }
+                    }.onFailure { imageProxy.close() }
                 }
 
                 try {
