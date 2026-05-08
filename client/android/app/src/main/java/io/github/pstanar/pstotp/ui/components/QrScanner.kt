@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +91,30 @@ fun QrScanner(
         return
     }
 
+    // Hoist the three disposable resources out of the factory lambda
+    // so DisposableEffect can release them when the AndroidView leaves
+    // composition (e.g. user switches tabs in AddAccountScreen). Before
+    // this, switching away from the QR tab held the camera, the ML Kit
+    // scanner client, and a single-thread executor for the lifetime of
+    // the activity.
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    val executor = remember { Executors.newSingleThreadExecutor() }
+    val scanner = remember { BarcodeScanning.getClient() }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            // Each step independently — a teardown failure in one
+            // shouldn't mask the others. `isDone` guards against the
+            // case where the future hadn't resolved yet (camera was
+            // never bound, so there's nothing to unbind).
+            runCatching {
+                if (cameraProviderFuture.isDone) cameraProviderFuture.get().unbindAll()
+            }
+            runCatching { scanner.close() }
+            runCatching { executor.shutdown() }
+        }
+    }
+
     AndroidView(
         modifier = modifier.clipToBounds(),
         factory = { ctx ->
@@ -100,8 +125,6 @@ fun QrScanner(
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 )
             }
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-            val executor = Executors.newSingleThreadExecutor()
 
             cameraProviderFuture.addListener({
                 val cameraProvider = cameraProviderFuture.get()
@@ -123,8 +146,6 @@ fun QrScanner(
                     )
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
-
-                val scanner = BarcodeScanning.getClient()
 
                 imageAnalysis.setAnalyzer(executor) { imageProxy ->
                     @androidx.camera.core.ExperimentalGetImage
