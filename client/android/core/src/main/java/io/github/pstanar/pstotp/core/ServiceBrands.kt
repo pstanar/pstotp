@@ -54,7 +54,15 @@ object ServiceBrands {
     )
 
     fun get(issuer: String): ServiceBrand? {
+        // Guard the empty / non-alphanumeric cases up front:
+        //   - `issuer.first()` (line below) throws on empty.
+        //   - `name.contains(key)` is true for every brand when `key` is
+        //     empty (every string contains ""), so without this guard
+        //     the first brand always "matches" and we'd return arbitrary
+        //     colors for blank issuers.
+        if (issuer.isBlank()) return null
         val key = issuer.lowercase().replace(Regex("[^a-z0-9]"), "")
+        if (key.isEmpty()) return null
         for ((name, brand) in brands) {
             if (key.contains(name) || name.contains(key)) {
                 return brand.copy(letter = brand.letter ?: issuer.first().uppercase())
