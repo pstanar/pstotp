@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { BackupSection } from "./backup-section";
+import { SettingsSection } from "./settings-section";
 import {
   listUsers,
   getUserDetail,
@@ -272,6 +273,8 @@ export function AdminPage() {
           ))}
         </div>
       )}
+
+      <SettingsSection />
 
       <BackupSection />
 

@@ -28,6 +28,7 @@ public static class AuditEvents
     public const string UserEnabled = "user_enabled";
     public const string UserDeleted = "user_deleted";
     public const string ForcePasswordResetSet = "force_password_reset_set";
+    public const string RegistrationEnabledChanged = "registration_enabled_changed";
 
     // Backup
     public const string BackupExported = "backup_exported";

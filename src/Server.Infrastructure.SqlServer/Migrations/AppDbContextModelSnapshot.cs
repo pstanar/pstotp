@@ -328,6 +328,31 @@ namespace PsTotp.Server.Infrastructure.SqlServer.Migrations
                     b.ToTable("RegistrationSessions");
                 });
 
+            modelBuilder.Entity("PsTotp.Server.Domain.Entities.ServerSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("RegistrationEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ServerSettings");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            RegistrationEnabled = true,
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
+                });
+
             modelBuilder.Entity("PsTotp.Server.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")

@@ -19,6 +19,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<WebAuthnCeremony> WebAuthnCeremonies => Set<WebAuthnCeremony>();
     public DbSet<PasswordResetSession> PasswordResetSessions => Set<PasswordResetSession>();
     public DbSet<VaultIconLibrary> VaultIconLibraries => Set<VaultIconLibrary>();
+    public DbSet<ServerSettings> ServerSettings => Set<ServerSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -140,6 +141,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // can't both succeed — the second throws DbUpdateConcurrencyException.
             entity.Property(e => e.Version).IsConcurrencyToken();
             entity.HasOne(e => e.User).WithOne().HasForeignKey<VaultIconLibrary>(e => e.UserId);
+        });
+
+        modelBuilder.Entity<Domain.Entities.ServerSettings>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // Seed the singleton row so existing deployments pick up the
+            // settings record on migration with registration enabled by
+            // default. New columns added here in future should also seed
+            // their non-null defaults. Domain.Entities prefix disambiguates
+            // from the same-named DbSet property on this DbContext.
+            entity.HasData(new Domain.Entities.ServerSettings
+            {
+                Id = Domain.Entities.ServerSettings.SingletonId,
+                RegistrationEnabled = true,
+                UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            });
         });
     }
 }

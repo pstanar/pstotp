@@ -11,6 +11,7 @@ public static class DependencyInjection
     {
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<ITokenService, TokenService>();
+        services.AddScoped<IServerSettingsService, ServerSettingsService>();
         services.AddSingleton<IRateLimiter, RateLimiter>();
 
         // HttpClient for the icon-proxy endpoint. Short timeout; generic user-agent.

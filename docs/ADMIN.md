@@ -124,6 +124,30 @@ You'd cancel a session when:
 
 See `Recovery sessions` below for the wider lifecycle.
 
+## Server settings — registration toggle
+
+The admin page also has a **Server settings** section with a single
+runtime toggle today: **User registration**. When off,
+`POST /api/auth/register/begin` returns 403 and no new users can
+self-register. Existing users are unaffected.
+
+The toggle lives in the database, not `appsettings.json`. Reasons:
+
+- **Zero-restart response to abuse.** If the public registration
+  endpoint is being hammered, flipping the toggle takes effect on the
+  next request — no service restart, no config-file edit.
+- **Audit trail for free.** Every change writes a
+  `registration_enabled_changed` event to `AuditEvents` with the
+  admin's user ID and IP. Operators can answer "who turned this off
+  and when" from the audit log.
+- **Single source of truth.** No "which one wins?" confusion between
+  a config file and a runtime toggle. There deliberately isn't a
+  config-file fallback.
+
+Default after fresh install / migration is **enabled** — first-user
+registration on a new instance works without any admin intervention,
+matching the existing first-user-wins admin bootstrap.
+
 ## Audit log review
 
 Every state-changing action that matters is logged to `AuditEvents`

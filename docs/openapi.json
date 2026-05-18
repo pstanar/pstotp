@@ -1101,6 +1101,40 @@
           }
         }
       }
+    },
+    "/api/admin/settings": {
+      "get": {
+        "tags": [
+          "AdminSettingsEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/admin/settings/registration": {
+      "put": {
+        "tags": [
+          "AdminSettingsEndpoints"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRegistrationEnabledRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1530,6 +1564,17 @@
           }
         }
       },
+      "SetRegistrationEnabledRequest": {
+        "required": [
+          "enabled"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
       "VaultEntryUpsertRequest": {
         "required": [
           "entryPayload",
@@ -1752,6 +1797,9 @@
     },
     {
       "name": "BackupEndpoints"
+    },
+    {
+      "name": "AdminSettingsEndpoints"
     }
   ]
 }

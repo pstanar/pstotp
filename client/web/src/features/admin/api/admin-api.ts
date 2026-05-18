@@ -60,3 +60,18 @@ export interface AdminRecoverySession {
 export function cancelRecoverySession(userId: string, sessionId: string): Promise<void> {
   return apiClient.post(`/admin/users/${userId}/recovery-sessions/${sessionId}/cancel`);
 }
+
+// --- Server settings ---
+
+export interface AdminServerSettings {
+  registrationEnabled: boolean;
+  updatedAt: string;
+}
+
+export function getServerSettings(): Promise<AdminServerSettings> {
+  return apiClient.get("/admin/settings");
+}
+
+export function setRegistrationEnabled(enabled: boolean): Promise<AdminServerSettings> {
+  return apiClient.put("/admin/settings/registration", { enabled });
+}

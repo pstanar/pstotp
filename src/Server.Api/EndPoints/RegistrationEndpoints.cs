@@ -17,8 +17,19 @@ public static class RegistrationEndpoints
         AppDbContext db,
         IEmailService emailService,
         IRateLimiter rateLimiter,
+        IServerSettingsService serverSettings,
         HttpContext httpContext)
     {
+        // Admin-controlled kill switch. Checked first so a disabled
+        // instance doesn't burn the IP rate-limit budget for rejected
+        // calls — operators can flip back on without the IP bucket
+        // pre-loaded with attempts from the disabled window.
+        var settings = await serverSettings.GetAsync(httpContext.RequestAborted);
+        if (!settings.RegistrationEnabled)
+            return Results.Json(
+                new { Error = "Registration is disabled" },
+                statusCode: 403);
+
         // IP-keyed rate limit — backstops the per-email session limit
         // below against an attacker rotating the email field. Real IP
         // comes through UseForwardedHeaders (App.cs:51), so this is the
@@ -108,8 +119,18 @@ public static class RegistrationEndpoints
         ITokenService tokenService,
         IAuditService audit,
         IConfiguration configuration,
+        IServerSettingsService serverSettings,
         HttpContext httpContext)
     {
+        // Same kill switch as Begin — closes the window where someone
+        // with an already-started session could finish registration
+        // after an operator flips the toggle off.
+        var settings = await serverSettings.GetAsync(httpContext.RequestAborted);
+        if (!settings.RegistrationEnabled)
+            return Results.Json(
+                new { Error = "Registration is disabled" },
+                statusCode: 403);
+
         var requireVerification = configuration.GetValue<bool>("Registration:RequireEmailVerification");
         if (requireVerification)
         {

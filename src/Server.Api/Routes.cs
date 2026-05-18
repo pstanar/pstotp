@@ -163,6 +163,10 @@ public static class Routes
         // Backup/restore
         group.MapPost("/admin/backup", BackupEndpoints.ExportBackup);
         group.MapPost("/admin/restore", BackupEndpoints.RestoreBackup).DisableAntiforgery();
+
+        // Runtime-toggleable server settings (admin UI; never lives in appsettings).
+        group.MapGet("/admin/settings", AdminSettingsEndpoints.Get);
+        group.MapPut("/admin/settings/registration", AdminSettingsEndpoints.SetRegistrationEnabled);
     }
 
     /// <summary>
