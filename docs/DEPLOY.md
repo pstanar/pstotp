@@ -709,6 +709,25 @@ per-endpoint role checks. Don't treat the header as a secret in the
 threat-modelling sense and don't relax other controls because it's
 in place.
 
+**Concretely, do not:**
+
+- **Treat the header as authentication or authorisation.** It's a
+  bouncer at the door, not a passport. The actual auth checks
+  (password verifier, JWT, `[Authorize]` policies, admin role) still
+  do every bit of the work they did without nginx in the picture.
+  Don't disable any of them just because you have the header.
+- **Rotate it like a secret.** Once the APK ships, the header value
+  is public — every device on the app store has it. Rotating means
+  pushing a new APK, waiting for every install to update, and
+  cutting off the old value, which doesn't buy you anything against
+  a real attacker (they already pulled the value out of v1) and
+  just risks locking your users out. Pick a value once, keep it.
+- **Expect logs / metrics to be useful for abuse detection.** Anyone
+  who scrapes the APK can send the header, so a sudden spike in
+  header-bearing requests from unfamiliar IPs is what you'd expect
+  if your app got popular, not necessarily an attack signal. Use
+  the usual application-level rate limiters and audit log for that.
+
 ```nginx
 # /etc/nginx/sites-available/totp
 #

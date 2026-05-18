@@ -51,11 +51,17 @@ POST /api/auth/register/verify-email   (only when emailVerificationRequired is t
 POST /api/auth/register                → user + initial device, logs in
 ```
 
-First account created on a fresh install is an admin automatically
-(first-user-wins); everything after goes through email verification if
-`EmailVerificationRequired` is configured. Registration wraps the
-vault key with the password-derived KEK and the device's ECDH public
-key at the same time so the user is usable immediately after.
+Registration does not grant any role automatically. Admin status comes
+from the `Admins` config array (list of emails); the server stamps the
+role into `user.Role` on every successful login. To bootstrap an
+admin, add your email to `Admins` and sign in — order doesn't matter,
+you can register first and edit the config after. See `docs/ADMIN.md`
+→ *Becoming an admin* for the full story.
+
+Email verification is gated on `Registration:RequireEmailVerification`.
+Registration wraps the vault key with the password-derived KEK and the
+device's ECDH public key at the same time so the user is usable
+immediately after.
 
 ### Login (two-phase challenge-response)
 

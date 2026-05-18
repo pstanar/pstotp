@@ -144,9 +144,10 @@ The toggle lives in the database, not `appsettings.json`. Reasons:
   a config file and a runtime toggle. There deliberately isn't a
   config-file fallback.
 
-Default after fresh install / migration is **enabled** — first-user
-registration on a new instance works without any admin intervention,
-matching the existing first-user-wins admin bootstrap.
+Default after fresh install / migration is **enabled** — registration
+on a new instance works without any admin intervention, which is what
+the `Admins`-config bootstrap model needs to be usable. (You sign up
+first, add your email to `Admins`, sign back in.)
 
 ## Audit log review
 

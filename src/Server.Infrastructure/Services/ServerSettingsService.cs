@@ -37,6 +37,11 @@ public sealed class ServerSettingsService(AppDbContext db) : IServerSettingsServ
         // Defensive creation — should be unreachable on a properly
         // migrated install. Registration defaults to enabled so we
         // don't surprise existing deployments.
+        //
+        // Two concurrent callers can both observe "no row" and both try
+        // to insert SingletonId; the primary key collision will fail
+        // exactly one of them. Catch that and re-read so the loser
+        // returns the winner's row instead of bubbling the exception.
         row = new ServerSettings
         {
             Id = ServerSettings.SingletonId,
@@ -44,7 +49,17 @@ public sealed class ServerSettingsService(AppDbContext db) : IServerSettingsServ
             UpdatedAt = DateTime.UtcNow,
         };
         db.ServerSettings.Add(row);
-        await db.SaveChangesAsync(ct);
-        return row;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return row;
+        }
+        catch (DbUpdateException)
+        {
+            db.Entry(row).State = EntityState.Detached;
+            var winner = await db.ServerSettings.FirstOrDefaultAsync(s => s.Id == ServerSettings.SingletonId, ct);
+            if (winner is not null) return winner;
+            throw;
+        }
     }
 }
