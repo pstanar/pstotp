@@ -681,6 +681,112 @@ then:
 }
 ```
 
+### nginx — basic-auth UI, header-bypass for the Android API
+
+Scenario: PsTotp is internet-reachable so the Android client can sync
+from anywhere, but you don't want random scanners hitting the web UI's
+sign-in screen and the rate limiters with anonymous traffic. Two-tier
+gate at the nginx layer:
+
+- **Web UI**: served behind HTTP basic auth. Operator types two
+  passwords to sign in — the nginx one to reach the SPA, then the
+  PsTotp one to unlock the vault.
+- **Android API (`/api/*`)**: skips basic auth when the request carries
+  a constant `X-PsTotp-Client: <secret>` header that's compiled into
+  the APK. Bypass is per-request — anonymous traffic (no header, no
+  basic auth) is 401'd at nginx before it reaches Kestrel.
+- **`.well-known/assetlinks.json`**: stays public unconditionally.
+  Android's Credential Manager fetches it without custom headers as
+  part of the passkey association spec; basic-auth gating it breaks
+  passkeys.
+
+**Honest framing — this is not a security boundary.** A constant
+header in an APK is recoverable with `apktool` in under a minute.
+The header is a "close the front door against random internet
+scanners" measure, nothing more. Real security still lives in HTTPS,
+the Argon2id-derived password verifier, JWT cookie sessions, and the
+per-endpoint role checks. Don't treat the header as a secret in the
+threat-modelling sense and don't relax other controls because it's
+in place.
+
+```nginx
+# /etc/nginx/sites-available/totp
+#
+# Map the X-PsTotp-Client header to an auth-realm value. When the
+# header matches the shared APK constant, the value resolves to the
+# literal string "off", which is the magic value that disables
+# auth_basic per-request. Any other value (or a missing header)
+# falls through to the real realm string and triggers basic auth.
+map $http_x_pstotp_client $auth_realm {
+    default              "PsTotp";
+    "REPLACE_WITH_APK_CONSTANT"  "off";
+}
+
+server {
+    listen 443 ssl http2;
+    server_name totp.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/totp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/totp.example.com/privkey.pem;
+
+    # Android passkeys — public, no basic auth, no header check.
+    # Credential Manager fetches this anonymously as part of the
+    # Digital Asset Links spec; gating it breaks passkey sign-in.
+    location = /.well-known/assetlinks.json {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # API surface — basic auth bypassed when the Android header is
+    # present, enforced for everyone else.
+    location /api/ {
+        auth_basic           $auth_realm;
+        auth_basic_user_file /etc/nginx/.htpasswd-pstotp;
+
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA + static assets — basic auth always. Browsers don't send
+    # the X-PsTotp-Client header, so the bypass never applies here.
+    location / {
+        auth_basic           "PsTotp";
+        auth_basic_user_file /etc/nginx/.htpasswd-pstotp;
+
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Create the htpasswd file with `htpasswd -B -c /etc/nginx/.htpasswd-pstotp <user>`
+(use `-B` for bcrypt; the default MD5 is weaker than what PsTotp uses
+internally and there's no reason to settle for it here). Ensure the file
+is readable by the nginx worker user and nobody else.
+
+On the Android side, the OkHttp client must add the header to every
+request it makes to `/api/*`. The constant lives in the APK — burying
+it in `BuildConfig` or `local.properties` is fine; treating it like a
+real secret with Keystore wrapping is over-engineering given the threat
+model above.
+
+**`assetlinks.json` gotcha**: the location block above proxies the
+request without basic auth, but the file still has to actually exist
+at `https://totp.example.com/.well-known/assetlinks.json` with the
+right SHA-256 fingerprint for your release keystore. Test with
+`curl -i https://totp.example.com/.well-known/assetlinks.json` from
+an unauthenticated machine — expect `200 OK`, not `401`.
+
 ### Caddy and Traefik (best-effort examples, unverified)
 
 The author hasn't run PsTotp behind Caddy or Traefik. The snippets below
