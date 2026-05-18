@@ -18,8 +18,20 @@ public static class PasswordResetEndpoints
         AppDbContext db,
         IEmailService emailService,
         IAuditService audit,
+        IRateLimiter rateLimiter,
         HttpContext httpContext)
     {
+        // IP-keyed rate limit — backstops the per-email session limit
+        // below against an attacker rotating the email field. Real IP
+        // comes through UseForwardedHeaders (App.cs:51).
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
+        if (clientIp is not null)
+        {
+            if (rateLimiter.IsRateLimited(clientIp, Application.SharedConstants.RateLimitPasswordResetIp))
+                return Results.StatusCode(429);
+            rateLimiter.RecordAttempt(clientIp, Application.SharedConstants.RateLimitPasswordResetIp);
+        }
+
         // Rate limit: max active sessions per email to prevent brute-force across sessions
         var recentCutoff = DateTime.UtcNow.AddMinutes(-15);
         var activeSessions = await db.PasswordResetSessions.CountAsync(s =>

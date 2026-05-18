@@ -15,8 +15,22 @@ public static class RegistrationEndpoints
     public static async Task<IResult> Begin(
         BeginRegistrationRequest request,
         AppDbContext db,
-        IEmailService emailService)
+        IEmailService emailService,
+        IRateLimiter rateLimiter,
+        HttpContext httpContext)
     {
+        // IP-keyed rate limit — backstops the per-email session limit
+        // below against an attacker rotating the email field. Real IP
+        // comes through UseForwardedHeaders (App.cs:51), so this is the
+        // client IP, not the reverse proxy.
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
+        if (clientIp is not null)
+        {
+            if (rateLimiter.IsRateLimited(clientIp, Application.SharedConstants.RateLimitRegistrationIp))
+                return Results.StatusCode(429);
+            rateLimiter.RecordAttempt(clientIp, Application.SharedConstants.RateLimitRegistrationIp);
+        }
+
         // Rate limit: max active sessions per email to prevent email spam
         var recentCutoff = DateTime.UtcNow.AddMinutes(-15);
         var activeSessions = await db.RegistrationSessions.CountAsync(s =>

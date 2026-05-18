@@ -80,5 +80,46 @@ public class EmailRecoveryRateLimitTests : IntegrationTestBase
         Assert.AreEqual((HttpStatusCode)429, response.StatusCode);
     }
 
+    [TestMethod]
+    public async Task Registration_Rate_Limited_By_IP_After_Five_Distinct_Emails()
+    {
+        // Five attempts from the same client IP using DIFFERENT emails each
+        // time (so the per-email session limit can't fire). The IP-keyed
+        // backstop should kick in on the sixth.
+        for (var i = 0; i < 5; i++)
+        {
+            var response = await Client.PostAsJsonAsync(
+                "/api/auth/register/begin",
+                new { email = $"spam-{Guid.NewGuid():N}@example.com" });
+            Assert.AreNotEqual((HttpStatusCode)429, response.StatusCode,
+                $"attempt #{i + 1} should still be allowed");
+        }
+
+        var sixth = await Client.PostAsJsonAsync(
+            "/api/auth/register/begin",
+            new { email = $"spam-{Guid.NewGuid():N}@example.com" });
+        Assert.AreEqual((HttpStatusCode)429, sixth.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Password_Reset_Begin_Rate_Limited_By_IP_After_Five_Distinct_Emails()
+    {
+        // Same shape as the registration test — different bucket, same
+        // budget (5 per IP per hour).
+        for (var i = 0; i < 5; i++)
+        {
+            var response = await Client.PostAsJsonAsync(
+                "/api/auth/password/reset/begin",
+                new { email = $"spam-{Guid.NewGuid():N}@example.com" });
+            Assert.AreNotEqual((HttpStatusCode)429, response.StatusCode,
+                $"attempt #{i + 1} should still be allowed");
+        }
+
+        var sixth = await Client.PostAsJsonAsync(
+            "/api/auth/password/reset/begin",
+            new { email = $"spam-{Guid.NewGuid():N}@example.com" });
+        Assert.AreEqual((HttpStatusCode)429, sixth.StatusCode);
+    }
+
     public TestContext TestContext { get; set; } = null!;
 }

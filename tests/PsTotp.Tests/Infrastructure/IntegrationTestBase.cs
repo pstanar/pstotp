@@ -1,8 +1,10 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -62,6 +64,15 @@ public abstract class IntegrationTestBase
 
                 builder.ConfigureTestServices(services =>
                 {
+                    // In-memory TestServer leaves Connection.RemoteIpAddress
+                    // null, which makes IP-keyed rate limits skip in tests.
+                    // Synthesize a loopback so the existing
+                    // UseForwardedHeaders pipeline sees a "known proxy"
+                    // and downstream endpoints see a stable client IP.
+                    // Slot the middleware in via IStartupFilter so it
+                    // runs BEFORE App.Configure's pipeline.
+                    services.AddTransient<IStartupFilter, TestRemoteIpStartupFilter>();
+
                     // Replace database with SQLite
                     services.RemoveAll<AppDbContext>();
                     services.RemoveAll<DbContextOptions<AppDbContext>>();
@@ -192,6 +203,25 @@ public abstract class IntegrationTestBase
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    /// <summary>
+    /// Fills <c>Connection.RemoteIpAddress</c> with a loopback when the
+    /// TestServer pipe has left it null. Runs ahead of every other
+    /// middleware so <c>UseForwardedHeaders</c> sees a trusted source.
+    /// </summary>
+    private sealed class TestRemoteIpStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(async (ctx, nextMw) =>
+                {
+                    ctx.Connection.RemoteIpAddress ??= IPAddress.Loopback;
+                    await nextMw();
+                });
+                next(app);
+            };
     }
 
     // --- Result DTOs ---

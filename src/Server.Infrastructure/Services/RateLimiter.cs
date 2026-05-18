@@ -9,6 +9,8 @@ public class RateLimiter : IRateLimiter
     {
         [Application.SharedConstants.RateLimitLogin] = (5, TimeSpan.FromMinutes(15)),
         [Application.SharedConstants.RateLimitRecovery] = (3, TimeSpan.FromHours(1)),
+        [Application.SharedConstants.RateLimitRegistrationIp] = (5, TimeSpan.FromHours(1)),
+        [Application.SharedConstants.RateLimitPasswordResetIp] = (5, TimeSpan.FromHours(1)),
     };
 
     private readonly ConcurrentDictionary<string, ConcurrentBag<DateTimeOffset>> _attempts = new();
