@@ -7,7 +7,19 @@ namespace PsTotp.Server.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    /// <summary>
+    /// Registers infrastructure services. <paramref name="fallbackOrigins"/> is
+    /// the resolved CORS / cookie allow-list (typically computed by
+    /// <c>AuthConstants.ResolveAllowedOrigins</c>) — used as the
+    /// <c>Fido2:Origins</c> fallback when that section isn't explicitly set,
+    /// so passkey enrollment / login don't silently break on non-default-port
+    /// deployments. Pass <c>null</c> to keep the legacy behaviour that reads
+    /// <c>AllowedOrigins</c> from config directly.
+    /// </summary>
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string? fallbackOrigins = null)
     {
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<ITokenService, TokenService>();
@@ -38,10 +50,16 @@ public static class DependencyInjection
         var fido2Origins = configuration.GetSection("Fido2:Origins").Get<HashSet<string>>();
         if (fido2Origins is null || fido2Origins.Count == 0)
         {
-            // Derive from AllowedOrigins (CORS config), or fall back to default
-            var corsOrigins = configuration.GetValue<string>("AllowedOrigins");
+            // Fall back through (in order):
+            //   1. The resolved AllowedOrigins from the caller — already
+            //      unions the listen URLs, so passkeys work on a custom
+            //      port without any extra config.
+            //   2. Legacy: raw "AllowedOrigins" config (kept for tests /
+            //      consumers that don't pass fallbackOrigins).
+            //   3. Hard-coded localhost:5000.
+            var corsOrigins = fallbackOrigins ?? configuration.GetValue<string>("AllowedOrigins");
             fido2Origins = !string.IsNullOrEmpty(corsOrigins)
-                ? corsOrigins.Split(';').ToHashSet()
+                ? corsOrigins.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet()
                 : ["http://localhost:5000"];
         }
 

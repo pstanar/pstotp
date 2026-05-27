@@ -170,12 +170,11 @@ public static class DeviceEndpoints
         ClaimsPrincipal user,
         AppDbContext db)
     {
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(user, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        var (rejection, callerDevice) = await DeviceAuthHelper.AuthoriseCallerDevice(user, db);
+        if (rejection is not null) return rejection;
 
         var userId = DeviceAuthHelper.GetUserId(user);
-        var deviceId = callerDevice.Id;
+        var deviceId = callerDevice!.Id;
 
         await using var transaction = await db.Database.BeginTransactionAsync();
 

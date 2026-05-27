@@ -52,19 +52,24 @@ async function doFetch(
 
 /**
  * Build a user-facing error message from a non-success response. Parses the
- * server's JSON `detail` field only when the body is actually JSON; otherwise
- * returns a status-code-based message. Never returns raw body text —
- * prevents reverse-proxy HTML error pages from leaking into the UI.
+ * server's JSON `detail` (RFC 7807 ProblemDetails) or `error` (custom filters
+ * like OriginValidationFilter / AccountStatusFilter) field when the body is
+ * actually JSON; otherwise returns a status-code-based message. Never returns
+ * raw body text — prevents reverse-proxy HTML error pages from leaking into
+ * the UI.
  */
 async function errorMessage(response: Response): Promise<string> {
   const contentType = response.headers.get("content-type") ?? "";
   const body = await response.text();
   if (contentType.includes("json") || body.trimStart().startsWith("{")) {
     try {
-      const parsed = JSON.parse(body) as { detail?: unknown };
-      if (typeof parsed.detail === "string" && parsed.detail.trim()) {
-        return parsed.detail;
-      }
+      const parsed = JSON.parse(body) as { detail?: unknown; error?: unknown };
+      const message = typeof parsed.detail === "string" && parsed.detail.trim()
+        ? parsed.detail
+        : typeof parsed.error === "string" && parsed.error.trim()
+        ? parsed.error
+        : null;
+      if (message) return message;
     } catch {
       // Fall through to status-code message.
     }

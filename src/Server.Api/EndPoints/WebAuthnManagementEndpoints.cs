@@ -13,9 +13,8 @@ public static class WebAuthnManagementEndpoints
         AppDbContext db)
     {
         var userId = DeviceAuthHelper.GetUserId(principal);
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(principal, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        if (await DeviceAuthHelper.RejectIfDeviceNotApproved(principal, db) is { } reject)
+            return reject;
 
         var credentials = await db.WebAuthnCredentials
             .Where(c => c.UserId == userId && c.RevokedAt == null)
@@ -33,9 +32,8 @@ public static class WebAuthnManagementEndpoints
         AppDbContext db)
     {
         var userId = DeviceAuthHelper.GetUserId(principal);
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(principal, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        if (await DeviceAuthHelper.RejectIfDeviceNotApproved(principal, db) is { } reject)
+            return reject;
 
         var credential = await db.WebAuthnCredentials.FirstOrDefaultAsync(c =>
             c.Id == credentialId && c.UserId == userId && c.RevokedAt == null);
@@ -56,9 +54,8 @@ public static class WebAuthnManagementEndpoints
         HttpContext httpContext)
     {
         var userId = DeviceAuthHelper.GetUserId(principal);
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(principal, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        var (rejection, callerDevice) = await DeviceAuthHelper.AuthoriseCallerDevice(principal, db);
+        if (rejection is not null) return rejection;
 
         var credential = await db.WebAuthnCredentials.FirstOrDefaultAsync(c =>
             c.Id == credentialId && c.UserId == userId && c.RevokedAt == null);
@@ -67,7 +64,7 @@ public static class WebAuthnManagementEndpoints
 
         credential.RevokedAt = DateTime.UtcNow;
 
-        audit.LogEvent(AuditEvents.WebAuthnCredentialRevoked, userId, callerDevice.Id,
+        audit.LogEvent(AuditEvents.WebAuthnCredentialRevoked, userId, callerDevice!.Id,
             eventData: new { CredentialId = credentialId, credential.FriendlyName },
             ipAddress: httpContext.Connection.RemoteIpAddress?.ToString());
 

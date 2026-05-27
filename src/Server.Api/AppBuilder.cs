@@ -146,7 +146,12 @@ public static class AppBuilder
         ConfigureAuthorization(builder);
 
         ConfigureDatabase(builder, dataDir);
-        builder.Services.AddInfrastructure(builder.Configuration);
+        // Pass the resolved CORS allow-list as the Fido2:Origins fallback so
+        // passkey enrollment / login on custom-port deployments don't need
+        // the operator to set Fido2:Origins by hand.
+        var resolvedOrigins = AuthConstants.ResolveAllowedOrigins(
+            builder.Configuration, builder.Environment.IsDevelopment());
+        builder.Services.AddInfrastructure(builder.Configuration, resolvedOrigins);
 
         ConfigureCors(builder);
     }

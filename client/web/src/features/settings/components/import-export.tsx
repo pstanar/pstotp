@@ -23,7 +23,7 @@ import {
 } from "@/features/vault/utils/external-imports";
 import { encryptEntry } from "@/features/vault/utils/vault-crypto";
 import { upsertEntry } from "@/features/vault/api/vault-api";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
 import { downloadIconAsDataUrl, isIconUrl } from "@/lib/icon-fetch";
 import type { KdfConfig } from "@/types/api-types";
 import type { VaultEntry, VaultEntryPlaintext } from "@/types/vault-types";
@@ -316,8 +316,19 @@ export function ImportExport() {
       void apiClient.post("/account/vault/imported");
       setImportCandidates(null);
       setImportFile(null);
-    } catch {
-      toast("Import failed", "error");
+    } catch (err) {
+      // Surface the server's reason when available — covers the
+      // OriginValidationFilter "Origin not allowed" case, the
+      // AccountStatusFilter "Account is disabled" / "Password reset
+      // required" cases, the 401 stale-device case (api-client already
+      // attempted refresh+retry, so a 401 here means re-auth failed),
+      // and any other ApiError-flavoured failure. Falls back to the
+      // generic toast for non-API errors (network, JSON corruption).
+      if (err instanceof ApiError) {
+        toast(err.message, "error");
+      } else {
+        toast("Import failed", "error");
+      }
     } finally {
       setImporting(false);
     }

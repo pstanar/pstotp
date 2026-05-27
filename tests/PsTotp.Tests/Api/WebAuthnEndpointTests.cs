@@ -29,12 +29,15 @@ public class WebAuthnEndpointTests : IntegrationTestBase
     }
 
     [TestMethod]
-    public async Task BeginRegistration_Requires_Approved_Device()
+    public async Task BeginRegistration_With_Missing_Device_Row_Returns_401()
     {
+        // Fabricated JWT against a fresh DB — no device row exists.
+        // RejectIfDeviceNotApproved must return 401 so the SPA's
+        // refresh-and-retry interceptor falls through to login.
         var fakeClient = CreateAuthenticatedClient(Guid.NewGuid(), "fake@example.com", Guid.NewGuid());
 
         var response = await fakeClient.PostAsync("/api/webauthn/register/begin", null);
-        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         fakeClient.Dispose();
     }
 
@@ -236,16 +239,20 @@ public class WebAuthnEndpointTests : IntegrationTestBase
     }
 
     [TestMethod]
-    public async Task Management_Endpoints_Require_Approved_Device()
+    public async Task Management_Endpoints_With_Missing_Device_Row_Return_401()
     {
+        // ListCredentials, Rename, Revoke all run device-auth via either
+        // RejectIfDeviceNotApproved or AuthoriseCallerDevice — both must
+        // 401 when the device row is missing (stale JWT) so the SPA
+        // routes back to login instead of looping on opaque 403s.
         var fakeClient = CreateAuthenticatedClient(Guid.NewGuid(), "fake@example.com", Guid.NewGuid());
 
-        Assert.AreEqual(HttpStatusCode.Forbidden,
+        Assert.AreEqual(HttpStatusCode.Unauthorized,
             (await fakeClient.GetAsync("/api/webauthn/credentials")).StatusCode);
-        Assert.AreEqual(HttpStatusCode.Forbidden,
+        Assert.AreEqual(HttpStatusCode.Unauthorized,
             (await fakeClient.PutAsJsonAsync($"/api/webauthn/credentials/{Guid.NewGuid()}/rename",
                 new { friendlyName = "X" })).StatusCode);
-        Assert.AreEqual(HttpStatusCode.Forbidden,
+        Assert.AreEqual(HttpStatusCode.Unauthorized,
             (await fakeClient.PostAsync($"/api/webauthn/credentials/{Guid.NewGuid()}/revoke", null)).StatusCode);
 
         fakeClient.Dispose();

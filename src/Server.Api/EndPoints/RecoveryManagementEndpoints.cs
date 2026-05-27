@@ -20,9 +20,8 @@ public static class RecoveryManagementEndpoints
         HttpContext httpContext)
     {
         var userId = DeviceAuthHelper.GetUserId(user);
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(user, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        var (rejection, callerDevice) = await DeviceAuthHelper.AuthoriseCallerDevice(user, db);
+        if (rejection is not null) return rejection;
 
         // If code hashes are provided, rotate them; otherwise keep existing codes
         // (envelope-only rotation for password change)
@@ -71,7 +70,7 @@ public static class RecoveryManagementEndpoints
                 userEntity.RecoveryCodeSalt = request.RotatedRecovery.RecoveryCodeSalt;
         }
 
-        audit.LogEvent(AuditEvents.RecoveryCodesRegenerated, userId, callerDevice.Id,
+        audit.LogEvent(AuditEvents.RecoveryCodesRegenerated, userId, callerDevice!.Id,
             ipAddress: httpContext.Connection.RemoteIpAddress?.ToString());
 
         await db.SaveChangesAsync();
@@ -86,9 +85,8 @@ public static class RecoveryManagementEndpoints
         HttpContext httpContext)
     {
         var userId = DeviceAuthHelper.GetUserId(user);
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(user, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        var (rejection, callerDevice) = await DeviceAuthHelper.AuthoriseCallerDevice(user, db);
+        if (rejection is not null) return rejection;
 
         var session = await db.RecoverySessions.FirstOrDefaultAsync(s =>
             s.Id == sessionId && s.UserId == userId
@@ -100,7 +98,7 @@ public static class RecoveryManagementEndpoints
         session.Status = RecoverySessionStatus.Cancelled;
         session.CancelledAt = DateTime.UtcNow;
 
-        audit.LogEvent(AuditEvents.RecoverySessionCancelled, userId, callerDevice.Id,
+        audit.LogEvent(AuditEvents.RecoverySessionCancelled, userId, callerDevice!.Id,
             eventData: new { RecoverySessionId = session.Id },
             ipAddress: httpContext.Connection.RemoteIpAddress?.ToString());
 

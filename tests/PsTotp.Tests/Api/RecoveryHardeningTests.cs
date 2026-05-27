@@ -104,9 +104,13 @@ public class RecoveryHardeningTests : IntegrationTestBase
     }
 
     [TestMethod]
-    public async Task Regenerate_Recovery_Codes_Requires_Approved_Device()
+    public async Task Regenerate_Recovery_Codes_With_Missing_Device_Row_Returns_401()
     {
-        // Create an unauthenticated client with a fake JWT for a non-existent device
+        // Fake JWT pointing at a user/device that doesn't exist in the DB
+        // (stale cookie against a deleted account / fresh DB). Endpoints
+        // under AuthoriseCallerDevice must return 401 so the SPA bounces
+        // to login; 403 would be a misleading "you don't have permission"
+        // message for what is really an invalid session.
         var fakeClient = CreateAuthenticatedClient(Guid.NewGuid(), "fake@example.com", Guid.NewGuid());
 
         var response = await fakeClient.PostAsJsonAsync("/api/recovery/codes/regenerate", new
@@ -120,7 +124,7 @@ public class RecoveryHardeningTests : IntegrationTestBase
             },
         });
 
-        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         fakeClient.Dispose();
     }
 
@@ -174,8 +178,11 @@ public class RecoveryHardeningTests : IntegrationTestBase
     }
 
     [TestMethod]
-    public async Task Cancel_Requires_Approved_Device()
+    public async Task Cancel_With_Missing_Device_Row_Returns_401()
     {
+        // Same as Regenerate_Recovery_Codes_With_Missing_Device_Row_Returns_401:
+        // fabricated JWT pointing at no real device row → 401 from
+        // AuthoriseCallerDevice, not the old opaque 403.
         var email = $"test-{Guid.NewGuid():N}@example.com";
         await RegisterTestUserAsync(email);
         var sessionId = await StartRecoverySession(email);
@@ -184,7 +191,7 @@ public class RecoveryHardeningTests : IntegrationTestBase
         var response = await fakeClient.PostAsJsonAsync(
             $"/api/recovery/session/{sessionId}/cancel", new { });
 
-        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         fakeClient.Dispose();
     }
 

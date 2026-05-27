@@ -23,9 +23,8 @@ public static partial class WebAuthnRegistrationEndpoints
         IFido2 fido2)
     {
         var userId = DeviceAuthHelper.GetUserId(principal);
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(principal, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        if (await DeviceAuthHelper.RejectIfDeviceNotApproved(principal, db) is { } reject)
+            return reject;
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null)
@@ -84,9 +83,8 @@ public static partial class WebAuthnRegistrationEndpoints
         HttpContext httpContext)
     {
         var userId = DeviceAuthHelper.GetUserId(principal);
-        var callerDevice = await DeviceAuthHelper.GetApprovedCallerDevice(principal, db);
-        if (callerDevice is null)
-            return Results.Forbid();
+        var (rejection, callerDevice) = await DeviceAuthHelper.AuthoriseCallerDevice(principal, db);
+        if (rejection is not null) return rejection;
 
         var ceremony = await db.WebAuthnCeremonies.FirstOrDefaultAsync(c =>
             c.Id == request.CeremonyId && c.UserId == userId
@@ -134,7 +132,7 @@ public static partial class WebAuthnRegistrationEndpoints
 
         ceremony.IsCompleted = true;
 
-        audit.LogEvent(AuditEvents.WebAuthnCredentialRegistered, userId, callerDevice.Id,
+        audit.LogEvent(AuditEvents.WebAuthnCredentialRegistered, userId, callerDevice!.Id,
             eventData: new { CredentialId = webAuthnCred.Id, webAuthnCred.FriendlyName },
             ipAddress: httpContext.Connection.RemoteIpAddress?.ToString());
 
