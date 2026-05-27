@@ -204,8 +204,3 @@
   }
 }
 
-/* Off-screen cards skip paint/layout — massive win with long entry lists. */
-.vault-entry-animate {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
-}
