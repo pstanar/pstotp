@@ -137,8 +137,10 @@ public abstract class IntegrationTestBase
     /// Build a Bearer-authenticated client whose JWT carries the exact
     /// claims provided — null values mean "omit the claim entirely",
     /// non-Guid strings mean "claim is present but malformed". Lets tests
-    /// exercise the claim-validation paths in DeviceAuthHelper without
-    /// having to forge a JWT by hand.
+    /// exercise the JWT-validation claim checks
+    /// (<c>JwtBearerEvents.OnTokenValidated</c> in
+    /// <c>AppBuilder.ConfigureAuthentication</c>) and the helper-level
+    /// defence-in-depth paths without having to forge a JWT by hand.
     /// </summary>
     protected HttpClient CreateClientWithRawClaims(string? sub, string? deviceId, string? email = "raw@example.com")
     {

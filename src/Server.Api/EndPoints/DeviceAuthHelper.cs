@@ -45,14 +45,14 @@ public static class DeviceAuthHelper
     /// <list type="bullet">
     ///   <item>
     ///     <description>
-    ///     <b>Claims missing/malformed or device row missing for this
-    ///     user</b>: <b>401 Unauthorized</b>. The JWT references a
-    ///     device that doesn't belong to the authenticated user (or
-    ///     doesn't exist at all) — typically a stale cookie pointing
-    ///     at a deleted account or a fresh DB. Returning 401 lets the
-    ///     SPA's refresh-and-retry interceptor fail through to the
-    ///     login screen and clear the dead cookie, instead of looping
-    ///     on opaque 403s until the access token expires.
+    ///     <b>Device row missing for this user</b>: <b>401
+    ///     Unauthorized</b>. The JWT references a device that doesn't
+    ///     belong to the authenticated user (or doesn't exist at all)
+    ///     — typically a stale cookie pointing at a deleted account
+    ///     or a fresh DB. Returning 401 lets the SPA's refresh-and-
+    ///     retry interceptor fail through to the login screen and
+    ///     clear the dead cookie, instead of looping on opaque 403s
+    ///     until the access token expires.
     ///     </description>
     ///   </item>
     ///   <item>
@@ -72,6 +72,13 @@ public static class DeviceAuthHelper
     /// The device-belongs-to-user binding is checked at the DB query
     /// so a JWT carrying someone else's device_id can't pass this
     /// gate.
+    ///
+    /// Note: claim presence and Guid-shape are enforced at JWT
+    /// validation by <c>JwtBearerEvents.OnTokenValidated</c> in
+    /// <c>AppBuilder.ConfigureAuthentication</c>, so any token
+    /// reaching this helper has well-formed sub and device_id. The
+    /// <c>TryGet*</c> calls below are defence-in-depth for direct
+    /// non-JWT callers (e.g. unit tests).
     /// </summary>
     public static async Task<IResult?> RejectIfDeviceNotApproved(ClaimsPrincipal user, AppDbContext db)
     {

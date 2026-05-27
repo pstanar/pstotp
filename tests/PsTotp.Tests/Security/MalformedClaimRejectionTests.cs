@@ -5,12 +5,16 @@ using PsTotp.Tests.Infrastructure;
 namespace PsTotp.Tests.Security;
 
 /// <summary>
-/// Locks in the contract that DeviceAuthHelper returns 401 (not 500, not
+/// Locks in the contract that the auth pipeline returns 401 (not 500, not
 /// 403) when the JWT's <c>sub</c> or <c>device_id</c> claim is missing
-/// or not a valid Guid. The underlying TryGetUserId / TryGetDeviceId
-/// paths run on every protected request; using a vault endpoint as the
-/// exercise target since it goes through RejectIfDeviceNotApproved, and
-/// a recovery endpoint to cover the AuthoriseCallerDevice path too.
+/// or not a valid Guid. The primary defence is the
+/// <c>JwtBearerEvents.OnTokenValidated</c> hook in
+/// <c>AppBuilder.ConfigureAuthentication</c>, which fails token validation
+/// before any endpoint runs; DeviceAuthHelper's TryGet* paths are a
+/// secondary defence-in-depth check. Exercised against both a vault
+/// endpoint (RejectIfDeviceNotApproved path) and a webauthn endpoint
+/// (AuthoriseCallerDevice path) to confirm the contract holds across the
+/// protected route group.
 /// </summary>
 [TestClass]
 public class MalformedClaimRejectionTests : IntegrationTestBase
@@ -70,10 +74,11 @@ public class MalformedClaimRejectionTests : IntegrationTestBase
     [TestMethod]
     public async Task Malformed_Claims_Return_401_On_AuthoriseCallerDevice_Path()
     {
-        // AuthoriseCallerDevice is used by recovery + webauthn endpoints.
-        // Exercise via /api/webauthn/credentials (GET — ListCredentials
-        // uses RejectIfDeviceNotApproved, but a missing sub still 401s
-        // since both helpers share the same TryGet* validation).
+        // Hit a different protected endpoint to confirm the 401 contract
+        // holds across the whole protected route group, not just for one
+        // helper. The JWT validator catches malformed claims before
+        // routing, so every protected path benefits from the same
+        // guarantee.
         var client = CreateClientWithRawClaims(sub: "bogus", deviceId: "also-bogus");
 
         var response = await client.GetAsync("/api/webauthn/credentials",
