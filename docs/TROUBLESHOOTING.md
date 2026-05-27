@@ -70,6 +70,22 @@ actually presents.
 origins are semicolon-separated. In dev,
 `appsettings.Development.json` already allows `http://localhost:5173`.
 
+### State-changing requests (PUT/POST/DELETE) return 403 with `"Origin not allowed"`
+
+**Cause.** `OriginValidationFilter` rejected the request because the
+browser's `Origin` (or `Referer`) header isn't in `AllowedOrigins`.
+This is the defence-in-depth check that pairs with `SameSite=Strict`
+cookies. Symptoms in the SPA tend to be generic "request failed"
+toasts; the response body and server log both name the offending
+origin (`{ "error": "Origin not allowed", "origin": "http://localhost:5245" }`).
+
+**Fix.** Either add the listen URL to `AllowedOrigins`
+(`AllowedOrigins=http://localhost:5245`) or unset `AllowedOrigins` so
+the server falls back to the auto-resolved default (env-appropriate
+default unioned with the actual listen URLs). If you set
+`AllowedOrigins` explicitly and forget the listen URL, the server
+also emits a startup warning naming both sides.
+
 ### "The specified request headers are not allowed" after moving hostnames
 
 **Cause.** `Fido2:Origins` is stale — browsers and Credential Manager

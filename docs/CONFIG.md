@@ -205,14 +205,27 @@ Array entries use index suffixes: `Fido2:Origins:0`, `Fido2:Origins:1`,
 ### `AllowedOrigins`
 
 - Type: `string` (semicolon-separated list of origins)
-- Default: unset; shipped Development overlay has `http://localhost:5173`.
+- Default: unset. When unset, the server unions the env-appropriate
+  default (`http://localhost:5173` in Development;
+  `http://localhost:5000;https://localhost:5001` in Production) with
+  the application's actual listen URLs — so running on a non-default
+  port (e.g. `ASPNETCORE_URLS=http://localhost:5245`) automatically
+  allows that origin without further config.
 - Env var: `AllowedOrigins`
-- Purpose: CORS allow-list for browsers calling the API from another
-  origin (typical: Vite dev server, or a split deployment where the
-  SPA is hosted separately).
-- Notes: Use full origins with scheme. For the typical deployment
-  (SPA served by the same API host) you don't need this set, because
-  the SPA and API share an origin.
+- Purpose: CORS allow-list **and** the allow-list for the
+  `OriginValidationFilter` defence-in-depth check on cookie-
+  authenticated state-changing requests. The two checks share this
+  value.
+- Notes: Use full origins with scheme. If you set this explicitly,
+  the value is taken literally — the auto-union with listen URLs
+  only applies when the knob is left unset. For the typical
+  same-origin deployment (SPA served by the same API host) you
+  don't need this set; for split deployments (SPA on a different
+  origin from the API, e.g. behind a reverse-proxy with a public
+  hostname) set it to the SPA's external origin. The server emits
+  a startup warning if your explicit value doesn't intersect any
+  listen URL — that's the configuration where cookie-authed
+  browser requests will all be rejected as origin mismatches.
 
 ### `BasePath`
 

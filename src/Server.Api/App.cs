@@ -10,8 +10,15 @@ using Serilog;
 
 namespace PsTotp.Server.Api;
 
-public static class App
+public static partial class App
 {
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Configured AllowedOrigins [{Allowed}] doesn't include any of the listen URLs [{Listen}]. " +
+                  "Cookie-authenticated browser requests from the SPA will be rejected by OriginValidationFilter " +
+                  "(bare 403). Add the listen URL(s) to AllowedOrigins, or unset AllowedOrigins to fall back to " +
+                  "the auto-resolved default.")]
+    private static partial void LogAllowedOriginsMismatch(Microsoft.Extensions.Logging.ILogger logger, string allowed, string listen);
+
     public static void Configure(WebApplication app)
     {
         // OpenAPI export mode: when set, the host is being booted only to
@@ -23,6 +30,8 @@ public static class App
         // DB, including Dockerfile.build. If you add a new DB-touching
         // startup step, gate it on this flag too.
         var isOpenApiExport = app.Configuration["PSTOTP_OPENAPI_EXPORT"] == "1";
+
+        WarnOnAllowedOriginsMismatch(app);
 
         // Reverse-proxy setup: honor X-Forwarded-Proto/Host/For so the app knows
         // the original scheme (https) and client IP. Must run before any
@@ -157,5 +166,37 @@ public static class App
             app.MapOpenApi();
             app.MapScalarApiReference();
         }
+    }
+
+    /// <summary>
+    /// Emit a startup warning when an operator has explicitly configured
+    /// <c>AllowedOrigins</c> but it doesn't intersect the actual listen URLs.
+    /// In that state, every cookie-authenticated state-changing request from
+    /// the SPA will be rejected by <c>OriginValidationFilter</c>, with no
+    /// signal in the SPA beyond a generic "request failed" toast. One log
+    /// line at startup turns that silent breakage into a noticeable one.
+    ///
+    /// Only fires when AllowedOrigins is explicitly configured — when it
+    /// isn't, <see cref="AuthConstants.ResolveAllowedOrigins"/> already
+    /// unions the listen URLs in, so there's nothing to warn about.
+    /// </summary>
+    private static void WarnOnAllowedOriginsMismatch(WebApplication app)
+    {
+        var configured = app.Configuration.GetValue<string>("AllowedOrigins");
+        if (string.IsNullOrEmpty(configured)) return;
+
+        var listenOrigins = AuthConstants.ResolveListenOrigins(app.Configuration);
+        if (listenOrigins.Count == 0) return;
+
+        var allowed = configured
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        var intersects = allowed.Any(a => listenOrigins.Any(l =>
+            string.Equals(a, l, StringComparison.OrdinalIgnoreCase)));
+        if (intersects) return;
+
+        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("PsTotp.Startup");
+        LogAllowedOriginsMismatch(logger, string.Join(", ", allowed), string.Join(", ", listenOrigins));
     }
 }
