@@ -143,7 +143,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasOne(e => e.User).WithOne().HasForeignKey<VaultIconLibrary>(e => e.UserId);
         });
 
-        modelBuilder.Entity<Domain.Entities.ServerSettings>(entity =>
+        modelBuilder.Entity<ServerSettings>(entity =>
         {
             entity.HasKey(e => e.Id);
             // Seed the singleton row so existing deployments pick up the
@@ -151,7 +151,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // default. New columns added here in future should also seed
             // their non-null defaults. Domain.Entities prefix disambiguates
             // from the same-named DbSet property on this DbContext.
-            entity.HasData(new Domain.Entities.ServerSettings
+            entity.HasData(new ServerSettings
             {
                 Id = Domain.Entities.ServerSettings.SingletonId,
                 RegistrationEnabled = true,
