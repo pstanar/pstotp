@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -192,6 +193,24 @@ public static class AppBuilder
                             && !string.IsNullOrEmpty(cookie))
                         {
                             context.Token = cookie;
+                        }
+                        return Task.CompletedTask;
+                    },
+                    // Reject access tokens whose sub or device_id claims are
+                    // missing or aren't valid Guids before any endpoint runs.
+                    // TokenService.GenerateAccessToken always sets both, so
+                    // this only fires for forged / tampered / cross-issuer
+                    // tokens. Without this, endpoints that call
+                    // DeviceAuthHelper.GetUserId / GetDeviceId would 500
+                    // on malformed input instead of cleanly 401-ing.
+                    OnTokenValidated = context =>
+                    {
+                        var sub = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                        var deviceId = context.Principal?.FindFirst(Application.SharedConstants.DeviceIdClaim)?.Value;
+                        if (sub is null || !Guid.TryParse(sub, out _) ||
+                            deviceId is null || !Guid.TryParse(deviceId, out _))
+                        {
+                            context.Fail("JWT missing or has malformed sub/device_id claim");
                         }
                         return Task.CompletedTask;
                     },

@@ -133,6 +133,43 @@ public abstract class IntegrationTestBase
         return client;
     }
 
+    /// <summary>
+    /// Build a Bearer-authenticated client whose JWT carries the exact
+    /// claims provided — null values mean "omit the claim entirely",
+    /// non-Guid strings mean "claim is present but malformed". Lets tests
+    /// exercise the claim-validation paths in DeviceAuthHelper without
+    /// having to forge a JWT by hand.
+    /// </summary>
+    protected HttpClient CreateClientWithRawClaims(string? sub, string? deviceId, string? email = "raw@example.com")
+    {
+        var key = new SymmetricSecurityKey(
+            Convert.FromBase64String(PsTotpWebApplicationFactory.TestJwtSecret));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        };
+        if (sub is not null) claims.Add(new Claim(JwtRegisteredClaimNames.Sub, sub));
+        if (deviceId is not null) claims.Add(new Claim("device_id", deviceId));
+        if (email is not null) claims.Add(new Claim(JwtRegisteredClaimNames.Email, email));
+
+        var token = new JwtSecurityToken(
+            issuer: "pstotp",
+            audience: "pstotp",
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(15),
+            signingCredentials: credentials);
+        var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+        });
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwt);
+        return client;
+    }
+
     protected async Task<(RegisterResult result, HttpClient client)> RegisterTestUserAsync(string? email = null)
     {
         email ??= $"test-{Guid.NewGuid():N}@example.com";
