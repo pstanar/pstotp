@@ -74,14 +74,57 @@ public class VaultReorderTests : IntegrationTestBase
     }
 
     [TestMethod]
-    public async Task Reorder_Requires_Approved_Device()
+    public async Task Reorder_With_Missing_Device_Row_Returns_401()
     {
+        // JWT signature validates but the device_id claim points at a row
+        // that doesn't exist in the DB (e.g. the user's account was deleted
+        // while they were signed in, or the cookie predates a DB reset).
+        // RejectIfDeviceNotApproved must return 401 so the SPA falls
+        // through to its refresh-and-relogin path rather than looping on
+        // opaque 403s until the access token expires.
         var fakeClient = CreateAuthenticatedClient(Guid.NewGuid(), "fake@example.com", Guid.NewGuid());
 
         var response = await fakeClient.PostAsJsonAsync("/api/vault/reorder",
             new { entryIds = new[] { Guid.NewGuid().ToString() } });
-        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         fakeClient.Dispose();
+    }
+
+    [TestMethod]
+    public async Task Reorder_With_Pending_Device_Returns_403()
+    {
+        // Real device row exists but its Status is Pending (awaiting
+        // approval from another device). This is the legitimate "you
+        // need approval" case — keep returning 403 so the SPA shows
+        // "approve me from another device" rather than bouncing the
+        // user back to the login screen.
+        var (registerResult, _) = await RegisterTestUserAsync();
+        var userId = Guid.Parse(registerResult.UserId);
+
+        var (scope, db) = GetDbContext();
+        using (scope)
+        {
+            var pendingDeviceId = Guid.NewGuid();
+            db.Devices.Add(new Server.Domain.Entities.Device
+            {
+                Id = pendingDeviceId,
+                UserId = userId,
+                DeviceName = "Pending",
+                Platform = "test",
+                ClientType = "web",
+                Status = Server.Domain.Entities.DeviceStatus.Pending,
+                DevicePublicKey = "",
+                CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync(TestContext.CancellationToken);
+
+            var pendingClient = CreateAuthenticatedClient(userId, "fake@example.com", pendingDeviceId);
+            var response = await pendingClient.PostAsJsonAsync("/api/vault/reorder",
+                new { entryIds = new[] { Guid.NewGuid().ToString() } });
+            Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+            pendingClient.Dispose();
+        }
     }
 
     public TestContext TestContext { get; set; } = null!;

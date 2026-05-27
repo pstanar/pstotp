@@ -13,8 +13,8 @@ public static class VaultEndpoints
         AppDbContext db)
     {
         var userId = DeviceAuthHelper.GetUserId(user);
-        if (!await DeviceAuthHelper.IsDeviceApproved(user, db))
-            return Results.Forbid();
+        if (await DeviceAuthHelper.RejectIfDeviceNotApproved(user, db) is { } reject)
+            return reject;
 
         var entries = await db.VaultEntries
             .Where(e => e.UserId == userId)
@@ -38,8 +38,8 @@ public static class VaultEndpoints
         AppDbContext db)
     {
         var userId = DeviceAuthHelper.GetUserId(user);
-        if (!await DeviceAuthHelper.IsDeviceApproved(user, db))
-            return Results.Forbid();
+        if (await DeviceAuthHelper.RejectIfDeviceNotApproved(user, db) is { } reject)
+            return reject;
 
         var now = DateTime.UtcNow;
 
@@ -87,8 +87,8 @@ public static class VaultEndpoints
         AppDbContext db)
     {
         var userId = DeviceAuthHelper.GetUserId(user);
-        if (!await DeviceAuthHelper.IsDeviceApproved(user, db))
-            return Results.Forbid();
+        if (await DeviceAuthHelper.RejectIfDeviceNotApproved(user, db) is { } reject)
+            return reject;
 
         var entries = await db.VaultEntries
             .Where(e => e.UserId == userId && e.DeletedAt == null)
@@ -111,8 +111,8 @@ public static class VaultEndpoints
         AppDbContext db)
     {
         var userId = DeviceAuthHelper.GetUserId(user);
-        if (!await DeviceAuthHelper.IsDeviceApproved(user, db))
-            return Results.Forbid();
+        if (await DeviceAuthHelper.RejectIfDeviceNotApproved(user, db) is { } reject)
+            return reject;
 
         var entry = await db.VaultEntries
             .FirstOrDefaultAsync(e => e.Id == entryId && e.UserId == userId);
