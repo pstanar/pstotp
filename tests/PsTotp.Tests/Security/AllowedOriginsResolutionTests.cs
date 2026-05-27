@@ -119,6 +119,24 @@ public class AllowedOriginsResolutionTests
     }
 
     [TestMethod]
+    public void Listen_Url_Ipv6_Loopback_Preserves_Brackets()
+    {
+        // [::1] is the IPv6 loopback — must round-trip with brackets intact
+        // so it matches the Origin header browsers send for the same address.
+        // Uri.Host preserves the brackets for IPv6 (despite what some docs
+        // imply), so the resolver shouldn't need to re-wrap.
+        var config = BuildConfig(new()
+        {
+            ["Urls"] = "http://[::1]:5246;https://[::1]:5247",
+        });
+
+        var origins = AuthConstants.ResolveListenOrigins(config);
+
+        CollectionAssert.Contains(origins.ToArray(), "http://[::1]:5246");
+        CollectionAssert.Contains(origins.ToArray(), "https://[::1]:5247");
+    }
+
+    [TestMethod]
     public void Listen_Origins_Ignores_Malformed_Urls()
     {
         var config = BuildConfig(new()

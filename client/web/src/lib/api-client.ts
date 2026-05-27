@@ -63,13 +63,11 @@ async function errorMessage(response: Response): Promise<string> {
   const body = await response.text();
   if (contentType.includes("json") || body.trimStart().startsWith("{")) {
     try {
-      const parsed = JSON.parse(body) as { detail?: unknown; error?: unknown };
-      const message = typeof parsed.detail === "string" && parsed.detail.trim()
-        ? parsed.detail
-        : typeof parsed.error === "string" && parsed.error.trim()
-        ? parsed.error
-        : null;
-      if (message) return message;
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      for (const field of ["detail", "error"]) {
+        const value = parsed[field];
+        if (typeof value === "string" && value.trim()) return value;
+      }
     } catch {
       // Fall through to status-code message.
     }
