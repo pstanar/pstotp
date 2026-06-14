@@ -21,6 +21,32 @@ with `openssl rand -base64 32` (Linux/macOS) or
 `[Convert]::ToBase64String([byte[]](1..32 | % {Get-Random -Max 256}))`
 (PowerShell). See `docs/DEPLOY.md` → *Configuration and secrets*.
 
+### Startup fails with "Permission denied" writing to the data directory on a CIFS/NFS mount
+
+**Cause.** The container runs as a non-root `pstotp` user (created
+inside the image). When the data volume is a CIFS/SMB or NFS mount
+whose `uid`/`gid` and `file_mode` don't match that user, the
+`pstotp` process falls into the "other" permission bucket and can't
+write. A typical symptom is a 0-byte `jwt-secret.key` appearing on
+the share followed by:
+
+```
+Unhandled exception. System.UnauthorizedAccessException:
+Access to the path '/data/jwt-secret.key' is denied.
+```
+
+**Fix.** Add a `user:` override to the compose service so the
+container process runs as the same uid/gid that owns the mount:
+
+```yaml
+services:
+  app:
+    user: "1000:1000"   # match uid=1000,gid=1000 in the fstab entry
+```
+
+If you can't change the uid, an alternative is to widen the mount's
+`file_mode` to `0777` in `/etc/fstab`, though that's less precise.
+
 ### Startup fails with "connection refused" on Postgres/MySQL/SQL Server
 
 **Cause.** Database isn't reachable from the app. In docker-compose
@@ -85,6 +111,19 @@ the server falls back to the auto-resolved default (env-appropriate
 default unioned with the actual listen URLs). If you set
 `AllowedOrigins` explicitly and forget the listen URL, the server
 also emits a startup warning naming both sides.
+
+Common mistake: using a comma instead of a semicolon as the separator.
+`AllowedOrigins=https://a.example.com,https://b.example.com` is
+parsed as a single unrecognised origin (the whole string including the
+comma), not as two separate ones. The separator is `;`:
+`AllowedOrigins=https://a.example.com;https://b.example.com`.
+
+Another common mistake: the environment variable change was made in
+`docker-compose.yaml` but the container was restarted with
+`docker restart <name>` or `docker compose restart` instead of being
+**recreated**. Both restart commands preserve the original environment.
+To pick up env-var changes you must recreate the container:
+`docker compose up -d --force-recreate`.
 
 ### "The specified request headers are not allowed" after moving hostnames
 
