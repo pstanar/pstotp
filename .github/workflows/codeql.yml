@@ -23,14 +23,14 @@ jobs:
       matrix:
         include:
           - language: csharp
-            build-mode: manual
+            build-mode: none
           - language: javascript-typescript
             build-mode: none
           - language: java-kotlin
             build-mode: manual
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -44,10 +44,6 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Build (.NET)
-        if: matrix.language == 'csharp'
-        run: dotnet build src/Server.Api/PsTotp.Server.Api.csproj -c Release -p:SkipSpa=true --nologo
 
       - name: Build (Android)
         if: matrix.language == 'java-kotlin'
