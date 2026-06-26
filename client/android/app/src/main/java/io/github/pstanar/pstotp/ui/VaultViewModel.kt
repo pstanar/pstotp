@@ -29,6 +29,7 @@ import io.github.pstanar.pstotp.core.model.VaultExport
 import io.github.pstanar.pstotp.core.util.IconFetch
 import javax.crypto.Cipher
 import io.github.pstanar.pstotp.core.repository.IconLibraryRepository
+import io.github.pstanar.pstotp.core.repository.IconLibrarySync
 import io.github.pstanar.pstotp.core.repository.VaultKeyMismatchException
 import io.github.pstanar.pstotp.core.repository.VaultRepository
 
@@ -215,13 +216,18 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
      * risk replacing the server library from a stale/empty local base.
      */
     private suspend fun ensureIconLibraryAuthoritative(key: ByteArray): Boolean {
-        val api = iconLibraryApi ?: return true
-        if (iconLibraryHydrated) return true
-        return runCatching {
-            iconLibraryRepo.pushIfDirty(api)
-            _libraryIcons.value = iconLibraryRepo.pullFromServer(key, api).icons
-            iconLibraryHydrated = true
-        }.isSuccess
+        val api = iconLibraryApi
+        val outcome = IconLibrarySync.hydrateIfNeeded(
+            connected = api != null,
+            hydrated = iconLibraryHydrated,
+        ) {
+            val connectedApi = api!! // the pull only runs in the connected branch
+            iconLibraryRepo.pushIfDirty(connectedApi)
+            iconLibraryRepo.pullFromServer(key, connectedApi).icons
+        }
+        outcome.icons?.let { _libraryIcons.value = it }
+        iconLibraryHydrated = outcome.hydrated
+        return outcome.authoritative
     }
 
     /**
