@@ -187,6 +187,58 @@ class ExternalImportsTest {
     }
 
     @Test
+    fun `Aegis extracts embedded icon as data URL`() {
+        val json = JSONObject(
+            """
+            {
+              "version": 1,
+              "header": {},
+              "db": { "entries": [ {
+                "type": "totp", "name": "a", "issuer": "E",
+                "icon": "aGVsbG8=", "icon_mime": "image/png",
+                "info": { "secret": "jbswy3dpehpk3pxp" }
+              } ] }
+            }
+            """.trimIndent(),
+        )
+        val entries = ExternalImports.tryParseAegis(json)!!
+        assertEquals("data:image/png;base64,aGVsbG8=", entries[0].icon)
+    }
+
+    @Test
+    fun `Aegis defaults mime and leaves icon null when absent`() {
+        val withoutMime = JSONObject(
+            """{ "version":1, "header":{}, "db": { "entries": [ {
+               "type":"totp","name":"a","issuer":"E","icon":"aGVsbG8=",
+               "info": { "secret": "jbswy3dpehpk3pxp" } } ] } }""",
+        )
+        assertEquals("data:image/png;base64,aGVsbG8=", ExternalImports.tryParseAegis(withoutMime)!![0].icon)
+
+        val noIcon = JSONObject(
+            """{ "version":1, "header":{}, "db": { "entries": [ {
+               "type":"totp","name":"a","issuer":"E",
+               "info": { "secret": "jbswy3dpehpk3pxp" } } ] } }""",
+        )
+        assertNull(ExternalImports.tryParseAegis(noIcon)!![0].icon)
+    }
+
+    @Test
+    fun `2FAS ignores brand-id icon objects but keeps embedded image strings`() {
+        val brandRef = JSONObject(
+            """{ "schemaVersion":4, "services": [ {
+               "secret":"JBSWY3DPEHPK3PXP","name":"Example",
+               "icon": { "selected": "Brand", "brand": { "id": "github" } } } ] }""",
+        )
+        assertNull(ExternalImports.tryParse2Fas(brandRef)!![0].icon)
+
+        val embedded = JSONObject(
+            """{ "schemaVersion":4, "services": [ {
+               "secret":"JBSWY3DPEHPK3PXP","name":"Example","icon":"aGVsbG8=" } ] }""",
+        )
+        assertEquals("data:image/png;base64,aGVsbG8=", ExternalImports.tryParse2Fas(embedded)!![0].icon)
+    }
+
+    @Test
     fun `Aegis rejects shape without header`() {
         val json = JSONObject(
             """{ "db": { "entries": [ { "type": "totp", "info": { "secret": "X" } } ] } }""",

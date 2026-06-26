@@ -20,6 +20,24 @@ import java.util.Base64
  */
 internal object ExternalImports {
 
+    /** Read a JSON field only when it's actually a non-empty string. */
+    private fun JSONObject.optStringField(key: String): String? =
+        (opt(key) as? String)?.takeIf { it.isNotEmpty() }
+
+    /**
+     * Build a data-URL from an embedded import icon. Aegis stores raw base64
+     * bytes plus an `icon_mime`; 2FAS custom images, when present, arrive as
+     * a base64 string. Returns null for anything that isn't usable image data
+     * (e.g. 2FAS brand-id references, which are JSON objects). The import flow
+     * re-decodes and resizes this to a normalised 64×64 PNG.
+     */
+    private fun embeddedIconDataUrl(icon: String?, mime: String?): String? {
+        if (icon.isNullOrEmpty()) return null
+        if (icon.startsWith("data:")) return icon
+        val mimeType = if (!mime.isNullOrEmpty()) mime else "image/png"
+        return "data:$mimeType;base64,$icon"
+    }
+
     // --- Google Authenticator ---------------------------------------------
 
     /**
@@ -147,7 +165,7 @@ internal object ExternalImports {
                     algorithm = info.optString("algo", "SHA1").uppercase(),
                     digits = info.optInt("digits", 6),
                     period = info.optInt("period", 30),
-                    icon = null,
+                    icon = embeddedIconDataUrl(e.optStringField("icon"), e.optStringField("icon_mime")),
                 ),
             )
         }
@@ -176,7 +194,10 @@ internal object ExternalImports {
                     algorithm = otp.optString("algorithm", "SHA1").uppercase(),
                     digits = otp.optInt("digits", 6),
                     period = otp.optInt("period", 30),
-                    icon = null,
+                    // 2FAS icons are usually brand-id references (objects we
+                    // can't resolve to bytes); only a rare embedded custom
+                    // image string yields a data URL here.
+                    icon = embeddedIconDataUrl(svc.optStringField("icon"), null),
                 ),
             )
         }

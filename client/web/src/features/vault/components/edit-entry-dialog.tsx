@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { EntryIcon } from "./entry-icon";
 import { IconLibrarySection } from "./icon-library-section";
-import { downloadIconAsDataUrl } from "@/lib/icon-fetch";
+import { downloadIconAsDataUrl, resizeImageBytesToDataUrl } from "@/lib/icon-fetch";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useIconLibraryStore } from "@/stores/useIconLibraryStore";
 import { useToast } from "@/hooks/use-toast";
@@ -25,8 +25,6 @@ const COMMON_EMOJIS = [
   "\u{1F4B3}", "\u{1F393}", "\u{2699}️", "\u{1F6E1}️", "\u{1F916}",
   "\u{1F4AC}", "\u{1F3A5}", "\u{1F3B5}", "\u{1F4DA}", "\u{2708}️",
 ];
-
-const MAX_ICON_SIZE = 64;
 
 export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialogProps) {
   const [issuer, setIssuer] = useState(entry.issuer);
@@ -49,7 +47,7 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
    * icon becomes reusable. Emoji picks intentionally don't — they aren't
    * library material.
    */
-  const adoptIcon = async (dataUrl: string, label: string) => {
+  const adoptIcon = async (dataUrl: string, label: string, sourceBytes?: Uint8Array | null) => {
     setIcon(dataUrl);
     if (!vaultKey) return;
     try {
@@ -59,7 +57,7 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
         toast(`My Icons is full (${MAX_LIBRARY_ICONS} max) — icon used on this entry only`, "info");
         return;
       }
-      await addIcon(vaultKey, label, dataUrl);
+      await addIcon(vaultKey, label, dataUrl, { sourceBytes });
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't save to library", "error");
     }
@@ -76,7 +74,7 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
       const host = (() => {
         try { return new URL(url).hostname; } catch { return "Icon"; }
       })();
-      await adoptIcon(result, host);
+      await adoptIcon(result.dataUrl, host, result.sourceBytes);
       setUrlInput("");
     } else {
       setUrlError("Could not fetch image (CORS or invalid URL)");
@@ -89,9 +87,11 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
     if (!file) return;
 
     try {
-      const dataUrl = await resizeToPng(file, MAX_ICON_SIZE);
+      const sourceBytes = new Uint8Array(await file.arrayBuffer());
+      const dataUrl = await resizeImageBytesToDataUrl(sourceBytes, file.type);
+      if (!dataUrl) throw new Error("Couldn't read image");
       const label = file.name.replace(/\.[^.]+$/, "") || "Icon";
-      await adoptIcon(dataUrl, label);
+      await adoptIcon(dataUrl, label, sourceBytes);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't read image", "error");
     }
@@ -214,29 +214,3 @@ export function EditEntryDialog({ open, entry, onClose, onSave }: EditEntryDialo
   );
 }
 
-function resizeToPng(file: File, target: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = target;
-        canvas.height = target;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) { reject(new Error("Canvas 2D not supported")); return; }
-        const scale = Math.max(target / img.width, target / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        ctx.drawImage(img, (target - w) / 2, (target - h) / 2, w, h);
-        resolve(canvas.toDataURL("image/png"));
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)));
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read image")); };
-    img.src = url;
-  });
-}

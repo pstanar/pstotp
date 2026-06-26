@@ -24,7 +24,9 @@ import {
 import { encryptEntry } from "@/features/vault/utils/vault-crypto";
 import { upsertEntry } from "@/features/vault/api/vault-api";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { downloadIconAsDataUrl, isIconUrl } from "@/lib/icon-fetch";
+import { downloadIconAsDataUrl, isIconUrl, resizeImageBytesToDataUrl } from "@/lib/icon-fetch";
+import { useIconLibraryStore } from "@/stores/useIconLibraryStore";
+import type { IconInput } from "@/stores/useIconLibraryStore";
 import type { KdfConfig } from "@/types/api-types";
 import type { VaultEntry, VaultEntryPlaintext } from "@/types/vault-types";
 import { cn } from "@/lib/css-utils";
@@ -51,30 +53,79 @@ function buildCandidates(imported: VaultEntryPlaintext[], existing: VaultEntry[]
   });
 }
 
-async function resolveIconUrls(
+/**
+ * Split a data: URL into its MIME type and raw bytes. Returns null for shapes
+ * we don't handle (extra mime params like `;charset=…;base64`, or base64 the
+ * decoder rejects) — the caller then drops that icon, which is acceptable.
+ */
+function parseDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } | null {
+  const match = /^data:([^;,]*)(;base64)?,([\s\S]*)$/.exec(dataUrl);
+  if (!match) return null;
+  const mime = match[1] || "application/octet-stream";
+  const isBase64 = match[2] !== undefined;
+  try {
+    const bytes = isBase64
+      ? fromBase64(match[3])
+      : new TextEncoder().encode(decodeURIComponent(match[3]));
+    return { mime, bytes };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normalise every entry icon to a 64×64 PNG data URL. URL icons are fetched
+ * via the proxy; embedded data: icons (from Aegis/2FAS) are decoded and
+ * resized. The original pre-resize bytes for each resolved icon are recorded
+ * in `sourceBytes` (keyed by the resulting data URL) so the import flow can
+ * compute a stable sourceHash when adding to the library. Icons that fail to
+ * resolve become undefined.
+ */
+async function resolveIcons(
   entries: VaultEntryPlaintext[],
+  sourceBytes: Map<string, Uint8Array>,
   onProgress?: (done: number, total: number) => void,
 ): Promise<VaultEntryPlaintext[]> {
-  const withUrls = entries.filter(e => isIconUrl(e.icon));
-  if (withUrls.length === 0) return entries;
+  const needsResolve = (icon: string | undefined): boolean =>
+    isIconUrl(icon) || (icon?.startsWith("data:") ?? false);
+
+  // Resolve each distinct icon once; progress tracks distinct icons (matching
+  // the Android client) rather than per-entry.
+  const originals = [...new Set(
+    entries.map(e => e.icon).filter((i): i is string => needsResolve(i)),
+  )];
+  if (originals.length === 0) return entries;
 
   let done = 0;
-  onProgress?.(0, withUrls.length);
+  onProgress?.(0, originals.length);
 
-  const iconByUrl = new Map<string, string | null>();
-  for (const entry of withUrls) {
-    const url = entry.icon!;
-    if (!iconByUrl.has(url)) {
-      iconByUrl.set(url, await downloadIconAsDataUrl(url));
+  const resolved = new Map<string, string | null>(); // original icon -> normalised data URL
+  for (const original of originals) {
+    let normalised: string | null = null;
+    if (isIconUrl(original)) {
+      const fetched = await downloadIconAsDataUrl(original);
+      if (fetched) {
+        normalised = fetched.dataUrl;
+        if (fetched.sourceBytes) sourceBytes.set(normalised, fetched.sourceBytes);
+      }
+    } else {
+      const parsed = parseDataUrl(original);
+      if (parsed) {
+        const dataUrl = await resizeImageBytesToDataUrl(parsed.bytes, parsed.mime);
+        if (dataUrl) {
+          normalised = dataUrl;
+          sourceBytes.set(normalised, parsed.bytes);
+        }
+      }
     }
+    resolved.set(original, normalised);
     done++;
-    onProgress?.(done, withUrls.length);
+    onProgress?.(done, originals.length);
   }
 
   return entries.map(e => {
-    if (!isIconUrl(e.icon)) return e;
-    const resolved = iconByUrl.get(e.icon!);
-    return { ...e, icon: resolved ?? undefined };
+    if (!needsResolve(e.icon)) return e;
+    return { ...e, icon: resolved.get(e.icon!) ?? undefined };
   });
 }
 
@@ -97,6 +148,7 @@ export function ImportExport() {
   const vaultKey = useVaultStore((s) => s.vaultKey);
   const addEntry = useVaultStore((s) => s.addEntry);
   const updateEntry = useVaultStore((s) => s.updateEntry);
+  const addIconsBatch = useIconLibraryStore((s) => s.addIconsBatch);
 
   // Export state
   const [showExportDialog, setShowExportDialog] = useState(false);
@@ -112,7 +164,11 @@ export function ImportExport() {
   const [importCandidates, setImportCandidates] = useState<ImportCandidate[] | null>(null);
   const [duplicateAction, setDuplicateAction] = useState<ImportAction>("overwrite");
   const [iconProgress, setIconProgress] = useState<{ done: number; total: number } | null>(null);
+  const [addToLibrary, setAddToLibrary] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Original pre-resize bytes for icons resolved during the current import,
+  // keyed by the normalised data URL — used for sourceHash at confirm time.
+  const iconSourceBytes = useRef<Map<string, Uint8Array>>(new Map());
 
   const handleExport = async () => {
     if (exportFormat === "encrypted" && !exportPassword) return;
@@ -178,6 +234,7 @@ export function ImportExport() {
   const handleImportFile = async (file?: File) => {
     const f = file ?? importFile;
     if (!f) return;
+    iconSourceBytes.current.clear();
     try {
       const text = await f.text();
 
@@ -191,7 +248,7 @@ export function ImportExport() {
           toast("No TOTP accounts found in Google Authenticator export", "error");
           return;
         }
-        const resolved = await resolveIconUrls(parsed, (done, total) => setIconProgress({ done, total }));
+        const resolved = await resolveIcons(parsed, iconSourceBytes.current, (done, total) => setIconProgress({ done, total }));
         setIconProgress(null);
         setImportCandidates(buildCandidates(resolved, entries));
         return;
@@ -201,7 +258,7 @@ export function ImportExport() {
       if (trimmed.startsWith("otpauth://")) {
         const lines = trimmed.split("\n").filter(l => l.trim().startsWith("otpauth://"));
         const parsed = lines.map(line => parseOtpauthUri(line.trim()));
-        const resolved = await resolveIconUrls(parsed, (done, total) => setIconProgress({ done, total }));
+        const resolved = await resolveIcons(parsed, iconSourceBytes.current, (done, total) => setIconProgress({ done, total }));
         setIconProgress(null);
         setImportCandidates(buildCandidates(resolved, entries));
         return;
@@ -223,7 +280,7 @@ export function ImportExport() {
         return;
       }
       if (asRecord.format === "pstotp-plain" && Array.isArray(asRecord.entries)) {
-        const resolved = await resolveIconUrls(asRecord.entries as VaultEntryPlaintext[], (done, total) => setIconProgress({ done, total }));
+        const resolved = await resolveIcons(asRecord.entries as VaultEntryPlaintext[], iconSourceBytes.current, (done, total) => setIconProgress({ done, total }));
         setIconProgress(null);
         setImportCandidates(buildCandidates(resolved, entries));
         return;
@@ -231,7 +288,7 @@ export function ImportExport() {
 
       const aegis = tryParseAegis(json);
       if (aegis) {
-        const resolved = await resolveIconUrls(aegis, (done, total) => setIconProgress({ done, total }));
+        const resolved = await resolveIcons(aegis, iconSourceBytes.current, (done, total) => setIconProgress({ done, total }));
         setIconProgress(null);
         setImportCandidates(buildCandidates(resolved, entries));
         return;
@@ -239,7 +296,7 @@ export function ImportExport() {
 
       const twoFas = tryParse2Fas(json);
       if (twoFas) {
-        const resolved = await resolveIconUrls(twoFas, (done, total) => setIconProgress({ done, total }));
+        const resolved = await resolveIcons(twoFas, iconSourceBytes.current, (done, total) => setIconProgress({ done, total }));
         setIconProgress(null);
         setImportCandidates(buildCandidates(resolved, entries));
         return;
@@ -254,6 +311,7 @@ export function ImportExport() {
   const handleDecryptImport = async () => {
     if (!importFile || !importPassword) return;
     setImporting(true);
+    iconSourceBytes.current.clear();
     try {
       const text = await importFile.text();
       const json = JSON.parse(text);
@@ -265,7 +323,7 @@ export function ImportExport() {
       const nonce = fromBase64(json.nonce);
       const plainBytes = await aesGcmDecrypt(encKey, ciphertext, nonce);
       const decrypted: VaultEntryPlaintext[] = JSON.parse(new TextDecoder().decode(plainBytes));
-      const resolved = await resolveIconUrls(decrypted, (done, total) => setIconProgress({ done, total }));
+      const resolved = await resolveIcons(decrypted, iconSourceBytes.current, (done, total) => setIconProgress({ done, total }));
       setIconProgress(null);
       setImportCandidates(buildCandidates(resolved, entries));
       setShowImportDialog(false);
@@ -281,6 +339,42 @@ export function ImportExport() {
     setImportCandidates(prev => prev?.map(c =>
       c.existingMatch ? { ...c, action } : c
     ) ?? null);
+  };
+
+  /**
+   * Opt-in: add the imported entries' icons to the icon library in a single
+   * batched write. Returns a short note for the success toast (or ""). Never
+   * throws — the entries are already imported, so a library failure is
+   * non-fatal.
+   */
+  const maybeAddIconsToLibrary = async (): Promise<string> => {
+    if (!addToLibrary || !vaultKey || !importCandidates) return "";
+    const seen = new Set<string>();
+    const items: IconInput[] = [];
+    for (const c of importCandidates) {
+      const icon = c.imported.icon;
+      if (c.action === "skip" || !icon?.startsWith("data:") || seen.has(icon)) continue;
+      seen.add(icon);
+      items.push({
+        // makeIcon owns the blank-label fallback.
+        label: c.imported.issuer,
+        dataUrl: icon,
+        sourceBytes: iconSourceBytes.current.get(icon) ?? null,
+      });
+    }
+    if (items.length === 0) return "";
+    try {
+      const { added, duplicates, overflow } = await addIconsBatch(vaultKey, items);
+      if (added === 0 && duplicates === 0 && overflow === 0) return "";
+      let note = ` · ${added} icon${added !== 1 ? "s" : ""} added`;
+      const extra: string[] = [];
+      if (duplicates > 0) extra.push(`${duplicates} duplicate${duplicates !== 1 ? "s" : ""}`);
+      if (overflow > 0) extra.push(`${overflow} over limit`);
+      if (extra.length > 0) note += ` (${extra.join(", ")})`;
+      return note;
+    } catch {
+      return "";
+    }
   };
 
   const handleConfirmImport = async () => {
@@ -312,7 +406,7 @@ export function ImportExport() {
         }
         imported++;
       }
-      toast(`Imported ${imported} entries`);
+      toast(`Imported ${imported} entries${await maybeAddIconsToLibrary()}`);
       void apiClient.post("/account/vault/imported");
       setImportCandidates(null);
       setImportFile(null);
@@ -362,6 +456,7 @@ export function ImportExport() {
       {importCandidates && (() => {
         const duplicates = importCandidates.filter(c => c.existingMatch);
         const activeCount = importCandidates.filter(c => c.action !== "skip").length;
+        const hasIcons = importCandidates.some(c => c.action !== "skip" && c.imported.icon?.startsWith("data:"));
 
         return (
           <div className="mt-3 rounded-md border border-border p-3 space-y-2">
@@ -422,6 +517,17 @@ export function ImportExport() {
                 </div>
               ))}
             </div>
+
+            {hasIcons && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={addToLibrary}
+                  onChange={(e) => setAddToLibrary(e.target.checked)}
+                />
+                Add icons to My Icons
+              </label>
+            )}
 
             <div className="flex gap-2">
               <Button size="sm" onClick={() => void handleConfirmImport()} disabled={importing || activeCount === 0}>

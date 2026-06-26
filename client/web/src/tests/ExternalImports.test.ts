@@ -236,6 +236,55 @@ describe("tryParseAegis", () => {
     const json = { db: { entries: [{ type: "totp", info: { secret: "X" } }] } };
     expect(tryParseAegis(json)).toBeNull();
   });
+
+  it("extracts an embedded icon as a data URL", () => {
+    const json = {
+      version: 1,
+      header: {},
+      db: {
+        entries: [
+          {
+            type: "totp",
+            name: "alice@example.com",
+            issuer: "Example",
+            icon: "aGVsbG8=",
+            icon_mime: "image/png",
+            info: { secret: "jbswy3dpehpk3pxp", algo: "sha1", digits: 6, period: 30 },
+          },
+        ],
+      },
+    };
+    const entries = tryParseAegis(json)!;
+    expect(entries[0].icon).toBe("data:image/png;base64,aGVsbG8=");
+  });
+
+  it("defaults the mime when icon_mime is absent", () => {
+    const json = {
+      version: 1,
+      header: {},
+      db: {
+        entries: [
+          {
+            type: "totp",
+            name: "a",
+            issuer: "E",
+            icon: "aGVsbG8=",
+            info: { secret: "jbswy3dpehpk3pxp" },
+          },
+        ],
+      },
+    };
+    expect(tryParseAegis(json)![0].icon).toBe("data:image/png;base64,aGVsbG8=");
+  });
+
+  it("leaves icon undefined when none is embedded", () => {
+    const json = {
+      version: 1,
+      header: {},
+      db: { entries: [{ type: "totp", name: "a", issuer: "E", info: { secret: "jbswy3dpehpk3pxp" } }] },
+    };
+    expect(tryParseAegis(json)![0].icon).toBeUndefined();
+  });
 });
 
 // --- 2FAS -----------------------------------------------------------------
@@ -284,5 +333,27 @@ describe("tryParse2Fas", () => {
   it("rejects shapes without schemaVersion", () => {
     const json = { services: [{ secret: "X" }] };
     expect(tryParse2Fas(json)).toBeNull();
+  });
+
+  it("ignores brand-id icon references (objects, not bytes)", () => {
+    const json = {
+      schemaVersion: 4,
+      services: [
+        {
+          secret: "JBSWY3DPEHPK3PXP",
+          name: "Example",
+          icon: { selected: "Brand", brand: { id: "github" } },
+        },
+      ],
+    };
+    expect(tryParse2Fas(json)![0].icon).toBeUndefined();
+  });
+
+  it("extracts an embedded custom-image icon string", () => {
+    const json = {
+      schemaVersion: 4,
+      services: [{ secret: "JBSWY3DPEHPK3PXP", name: "Example", icon: "aGVsbG8=" }],
+    };
+    expect(tryParse2Fas(json)![0].icon).toBe("data:image/png;base64,aGVsbG8=");
   });
 });

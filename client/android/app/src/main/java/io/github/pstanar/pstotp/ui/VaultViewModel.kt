@@ -3,6 +3,7 @@ package io.github.pstanar.pstotp.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import io.github.pstanar.pstotp.core.api.IconLibraryApi
 import io.github.pstanar.pstotp.core.crypto.KeystoreHelper
 import io.github.pstanar.pstotp.core.db.AppDatabase
@@ -196,6 +198,33 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
     // Last-write-wins on concurrent edits, matching the web client.
 
     /**
+     * True once the in-memory library is an authoritative base for mutations:
+     * either we're standalone (local IS the source of truth), or we've pulled
+     * the server copy this session. completeUnlock only warms from local cache,
+     * so until a connected device hydrates, an empty/stale cache must not be
+     * used as a mutation base — it would overwrite the server's real library.
+     * Reset on lock/unlock.
+     */
+    private var iconLibraryHydrated = false
+
+    /**
+     * Gate connected library mutations on an authoritative base. Standalone
+     * (no api): local is the source of truth, always ok. Connected: push any
+     * local changes, then pull the server copy once per session. Returns false
+     * (fail closed) if that sync fails, so callers refuse to mutate rather than
+     * risk replacing the server library from a stale/empty local base.
+     */
+    private suspend fun ensureIconLibraryAuthoritative(key: ByteArray): Boolean {
+        val api = iconLibraryApi ?: return true
+        if (iconLibraryHydrated) return true
+        return runCatching {
+            iconLibraryRepo.pushIfDirty(api)
+            _libraryIcons.value = iconLibraryRepo.pullFromServer(key, api).icons
+            iconLibraryHydrated = true
+        }.isSuccess
+    }
+
+    /**
      * Reconcile the local library with the server. Offline edits go up
      * first — otherwise pullFromServer would overwrite the local
      * ciphertext and clear the dirty flag before the push ever ran,
@@ -211,26 +240,27 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
                 iconLibraryRepo.pushIfDirty(api)
                 val blob = iconLibraryRepo.pullFromServer(key, api)
                 _libraryIcons.value = blob.icons
+                iconLibraryHydrated = true
             }
         }
     }
 
-    fun addLibraryIcon(label: String, dataUrl: String, onError: (String) -> Unit = {}) {
+    fun addLibraryIcon(
+        label: String,
+        dataUrl: String,
+        sourceBytes: ByteArray? = null,
+        onError: (String) -> Unit = {},
+    ) {
         val key = _vaultKey.value ?: return
         viewModelScope.launch {
             try {
-                if (_libraryIcons.value.size >= IconLibraryRepository.MAX_ICONS) {
-                    onError("Icon library is full (${IconLibraryRepository.MAX_ICONS} max).")
+                if (!ensureIconLibraryAuthoritative(key)) {
+                    onError("Couldn't sync icon library — check your connection and try again.")
                     return@launch
                 }
-                val next = _libraryIcons.value + LibraryIcon(
-                    id = IconLibraryRepository.newIconId(),
-                    label = label.ifBlank { "Icon" },
-                    data = dataUrl,
-                    createdAt = java.time.Instant.now().toString(),
-                )
-                val blob = iconLibraryRepo.save(key, next, iconLibraryApi)
-                _libraryIcons.value = blob.icons
+                // Repository de-dups on content and enforces the count/byte caps.
+                _libraryIcons.value =
+                    iconLibraryRepo.addIcon(key, _libraryIcons.value, label, dataUrl, sourceBytes, iconLibraryApi)
             } catch (e: Exception) {
                 onError(e.message ?: "Could not save icon")
             }
@@ -241,6 +271,10 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         val key = _vaultKey.value ?: return
         viewModelScope.launch {
             try {
+                if (!ensureIconLibraryAuthoritative(key)) {
+                    onError("Couldn't sync icon library — check your connection and try again.")
+                    return@launch
+                }
                 val next = _libraryIcons.value.filterNot { it.id == id }
                 val blob = iconLibraryRepo.save(key, next, iconLibraryApi)
                 _libraryIcons.value = blob.icons
@@ -254,6 +288,10 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         val key = _vaultKey.value ?: return
         viewModelScope.launch {
             try {
+                if (!ensureIconLibraryAuthoritative(key)) {
+                    onError("Couldn't sync icon library — check your connection and try again.")
+                    return@launch
+                }
                 val next = _libraryIcons.value.map {
                     if (it.id == id) it.copy(label = label.ifBlank { it.label }) else it
                 }
@@ -293,8 +331,10 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         _error.value = null
         // Warm up the icon library from local storage so the picker is
         // populated without waiting on the network. Server pull is opt-in
-        // via refreshIconLibraryFromServer() once connected.
+        // via refreshIconLibraryFromServer() once connected — until then the
+        // local cache is NOT authoritative for connected mutations.
         _libraryIcons.value = iconLibraryRepo.loadLocal(vaultKey).icons
+        iconLibraryHydrated = false
     }
 
     fun unlock(password: String, onSuccess: () -> Unit, onComplete: () -> Unit = {}) {
@@ -320,6 +360,7 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         _vaultKey.value = null
         _entries.value = emptyList()
         _libraryIcons.value = emptyList()
+        iconLibraryHydrated = false
     }
 
     /**
@@ -535,6 +576,25 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
     private val _iconProgress = MutableStateFlow<Pair<Int, Int>?>(null)
     val iconProgress: StateFlow<Pair<Int, Int>?> = _iconProgress.asStateFlow()
 
+    /** User opt-in: add imported entry icons to the icon library. */
+    private val _addIconsToLibrary = MutableStateFlow(true)
+    val addIconsToLibrary: StateFlow<Boolean> = _addIconsToLibrary.asStateFlow()
+    fun setAddIconsToLibrary(value: Boolean) { _addIconsToLibrary.value = value }
+
+    /**
+     * Original pre-resize bytes for icons resolved during the current import,
+     * keyed by the normalised data URL — used for sourceHash at confirm time.
+     */
+    private val importIconSourceBytes = mutableMapOf<String, ByteArray>()
+
+    /** Summary returned to the UI after a confirmed import. */
+    data class ImportSummary(
+        val entries: Int,
+        val iconsAdded: Int,
+        val iconDuplicates: Int,
+        val iconsOverLimit: Int,
+    )
+
     /**
      * Parse an import file and build candidates with duplicate detection.
      * Sets importCandidates for the UI to display, or sets error to "NEEDS_PASSWORD".
@@ -558,7 +618,7 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                val resolved = resolveIconUrls(parsed)
+                val resolved = resolveIcons(parsed)
                 _importCandidates.value = ImportCandidate.buildCandidates(resolved, _entries.value)
             } catch (e: Exception) {
                 _error.value = "Import failed: ${e.message}"
@@ -566,21 +626,61 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Download URL-based icons, replacing with data URLs. Icons that fail to fetch become null. */
-    private suspend fun resolveIconUrls(entries: List<VaultEntryPlaintext>): List<VaultEntryPlaintext> {
-        val urls = entries.mapNotNull { it.icon }.filter { IconFetch.isUrl(it) }.distinct()
-        if (urls.isEmpty()) return entries
+    private fun needsResolve(icon: String?): Boolean =
+        IconFetch.isUrl(icon) || (icon?.startsWith("data:") == true)
 
-        _iconProgress.value = 0 to urls.size
-        val iconByUrl = mutableMapOf<String, String?>()
-        urls.forEachIndexed { index, url ->
-            iconByUrl[url] = IconFetch.downloadAsDataUrl(url)
-            _iconProgress.value = (index + 1) to urls.size
+    /**
+     * Normalise every entry icon to a 64×64 PNG data URL: URL icons are
+     * downloaded; embedded data: icons (Aegis/2FAS) are decoded and resized.
+     * The original pre-resize bytes are recorded in [importIconSourceBytes]
+     * (keyed by the resulting data URL) for a stable sourceHash at confirm
+     * time. Icons that fail to resolve become null.
+     */
+    private suspend fun resolveIcons(entries: List<VaultEntryPlaintext>): List<VaultEntryPlaintext> {
+        importIconSourceBytes.clear()
+        val originals = entries.mapNotNull { it.icon }.filter { needsResolve(it) }.distinct()
+        if (originals.isEmpty()) return entries
+
+        _iconProgress.value = 0 to originals.size
+        val resolvedByOriginal = mutableMapOf<String, String?>()
+        originals.forEachIndexed { index, original ->
+            resolvedByOriginal[original] = resolveOneIcon(original)
+            _iconProgress.value = (index + 1) to originals.size
         }
         _iconProgress.value = null
 
         return entries.map { e ->
-            if (IconFetch.isUrl(e.icon)) e.copy(icon = iconByUrl[e.icon!!]) else e
+            if (needsResolve(e.icon)) e.copy(icon = resolvedByOriginal[e.icon!!]) else e
+        }
+    }
+
+    private suspend fun resolveOneIcon(original: String): String? {
+        return if (IconFetch.isUrl(original)) {
+            val fetched = IconFetch.downloadAsDataUrl(original) ?: return null
+            importIconSourceBytes[fetched.dataUrl] = fetched.sourceBytes
+            fetched.dataUrl
+        } else {
+            val bytes = decodeDataUrlBytes(original) ?: return null
+            val dataUrl = withContext(Dispatchers.IO) { IconFetch.resizeBytesToDataUrl(bytes) } ?: return null
+            importIconSourceBytes[dataUrl] = bytes
+            dataUrl
+        }
+    }
+
+    /** Decode the raw bytes carried by a data: URL (base64 or percent-encoded). */
+    private fun decodeDataUrlBytes(dataUrl: String): ByteArray? {
+        val comma = dataUrl.indexOf(',')
+        if (comma < 0) return null
+        val meta = dataUrl.substring("data:".length, comma)
+        val payload = dataUrl.substring(comma + 1)
+        return try {
+            if (meta.contains(";base64")) {
+                java.util.Base64.getDecoder().decode(payload)
+            } else {
+                java.net.URLDecoder.decode(payload, Charsets.UTF_8).toByteArray(Charsets.UTF_8)
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -608,7 +708,7 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
      * Execute the import according to each candidate's chosen action.
      * Overwrites update existing entries; add-copies create new entries with deduplicated names.
      */
-    fun confirmImport(onComplete: (Int) -> Unit) {
+    fun confirmImport(onComplete: (ImportSummary) -> Unit) {
         val key = _vaultKey.value
         val candidates = _importCandidates.value
         if (key == null || candidates == null) return
@@ -651,12 +751,60 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 _entries.value = repository.getAllEntries(key)
+
+                val iconResult = maybeAddImportedIconsToLibrary(key, candidates)
+
                 _importCandidates.value = null
-                onComplete(imported)
+                onComplete(
+                    ImportSummary(
+                        entries = imported,
+                        iconsAdded = iconResult?.added ?: 0,
+                        iconDuplicates = iconResult?.duplicates ?: 0,
+                        iconsOverLimit = iconResult?.overflow ?: 0,
+                    ),
+                )
                 onSyncNeeded?.invoke()
             } catch (e: Exception) {
                 _error.value = "Import failed: ${e.message}"
             }
         }
+    }
+
+    /**
+     * Opt-in: add the imported entries' icons to the library in one batched
+     * write. Non-fatal — the entries are already imported, so a library
+     * failure just yields a null result.
+     */
+    private suspend fun maybeAddImportedIconsToLibrary(
+        key: ByteArray,
+        candidates: List<ImportCandidate>,
+    ): IconLibraryRepository.BatchResult? {
+        if (!_addIconsToLibrary.value) return null
+        val seen = mutableSetOf<String>()
+        val items = mutableListOf<IconLibraryRepository.IconInput>()
+        for (c in candidates) {
+            val icon = c.imported.icon
+            if (c.action == ImportAction.SKIP || icon == null || !icon.startsWith("data:") || !seen.add(icon)) {
+                continue
+            }
+            items.add(
+                IconLibraryRepository.IconInput(
+                    // makeIcon owns the blank-label fallback.
+                    label = c.imported.issuer,
+                    dataUrl = icon,
+                    sourceBytes = importIconSourceBytes[icon],
+                ),
+            )
+        }
+        if (items.isEmpty()) return null
+        // Fail closed: never build the batch on a non-authoritative base, or a
+        // stale/empty local cache could overwrite the server's real library.
+        // Non-fatal — the entries are already imported.
+        if (!ensureIconLibraryAuthoritative(key)) return null
+        return runCatching {
+            val (icons, result) = iconLibraryRepo.addIconsBatch(key, _libraryIcons.value, items, iconLibraryApi)
+            _libraryIcons.value = icons
+            result
+        }.getOrNull()
     }
 }

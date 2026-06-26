@@ -60,8 +60,9 @@ import io.github.pstanar.pstotp.core.model.LibraryIcon
 import io.github.pstanar.pstotp.core.model.MAX_LIBRARY_ICONS
 import io.github.pstanar.pstotp.core.util.IconFetch
 import io.github.pstanar.pstotp.ui.VaultViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.withContext
 import java.net.URI
 
 private val COMMON_EMOJIS = listOf(
@@ -70,8 +71,6 @@ private val COMMON_EMOJIS = listOf(
     "💳", "🎓", "⚙️", "🛡️", "🤖",
     "💬", "🎥", "🎵", "📚", "✈️",
 )
-
-private const val MAX_ICON_SIZE = 64
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -91,23 +90,15 @@ fun IconPicker(
         mutableStateOf(emptyList<LibraryIcon>())
     })
 
-    // Parallels the web's adoptIcon: set the entry icon, then save to the library
-    // (skipping duplicates and respecting the hard cap). Only runs when the caller
-    // supplied a VaultViewModel — standalone call sites keep the picker local.
-    fun adoptIcon(dataUrl: String, label: String) {
+    // Parallels the web's adoptIcon: set the entry icon, then save to the library.
+    // The repository de-dups on content (by either hash) and enforces the caps,
+    // so we just pass the resized data URL plus the original source bytes (for a
+    // stable sourceHash). Only runs when the caller supplied a VaultViewModel —
+    // standalone call sites keep the picker local.
+    fun adoptIcon(dataUrl: String, label: String, sourceBytes: ByteArray?) {
         onIconChanged(dataUrl)
         val vm = vaultViewModel ?: return
-        val current = libraryIcons
-        if (current.any { it.data == dataUrl }) return
-        if (current.size >= MAX_LIBRARY_ICONS) {
-            Toast.makeText(
-                context,
-                "Library is full ($MAX_LIBRARY_ICONS max). Icon saved to entry but not added to library.",
-                Toast.LENGTH_LONG,
-            ).show()
-            return
-        }
-        vm.addLibraryIcon(label.ifBlank { "Icon" }, dataUrl) { msg ->
+        vm.addLibraryIcon(label, dataUrl, sourceBytes) { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
@@ -116,36 +107,16 @@ fun IconPicker(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            val original = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
-            if (original == null) return@rememberLauncherForActivityResult
-
-            // Scale to fit MAX_ICON_SIZE x MAX_ICON_SIZE, center crop
-            val scale = maxOf(
-                MAX_ICON_SIZE.toFloat() / original.width,
-                MAX_ICON_SIZE.toFloat() / original.height,
-            )
-            val scaledW = (original.width * scale).toInt()
-            val scaledH = (original.height * scale).toInt()
-            val scaled = Bitmap.createScaledBitmap(original, scaledW, scaledH, true)
-
-            val x = (scaledW - MAX_ICON_SIZE) / 2
-            val y = (scaledH - MAX_ICON_SIZE) / 2
-            val cropped = Bitmap.createBitmap(scaled, x, y, MAX_ICON_SIZE, MAX_ICON_SIZE)
-
-            val baos = ByteArrayOutputStream()
-            cropped.compress(Bitmap.CompressFormat.PNG, 100, baos)
-            val base64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
-            val dataUrl = "data:image/png;base64,$base64"
-            adoptIcon(dataUrl, issuer.trim())
-
-            original.recycle()
-            if (scaled !== original) scaled.recycle()
-            if (cropped !== scaled) cropped.recycle()
-        } catch (_: Exception) {
-            // Silently fail on bad images
+        scope.launch {
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: return@launch
+                val dataUrl = withContext(Dispatchers.IO) { IconFetch.resizeBytesToDataUrl(bytes) }
+                    ?: return@launch
+                adoptIcon(dataUrl, issuer.trim(), bytes)
+            } catch (_: Exception) {
+                // Silently fail on bad images
+            }
         }
     }
 
@@ -212,7 +183,7 @@ fun IconPicker(
                             val host = runCatching { URI(trimmed).host }.getOrNull()
                                 ?.takeIf { it.isNotBlank() }
                                 ?: issuer.trim().ifBlank { "Icon" }
-                            adoptIcon(result, host)
+                            adoptIcon(result.dataUrl, host, result.sourceBytes)
                             urlInput = ""
                         } else {
                             urlError = "Could not fetch image"

@@ -35,7 +35,11 @@ class IconLibraryRepository(db: AppDatabase) {
         if (cipherB64.isEmpty()) return IconLibraryBlob()
         return try {
             val payload = Base64.getDecoder().decode(cipherB64)
-            IconLibraryCrypto.decrypt(vaultKey, payload)
+            val blob = IconLibraryCrypto.decrypt(vaultKey, payload)
+            // Backfill dataHash for legacy icons that predate content hashing
+            // (in-memory; persisted on the next save). sourceHash can't be
+            // recovered — the original pre-resize bytes are gone.
+            blob.copy(icons = IconDedup.backfillHashes(blob.icons))
         } catch (_: Exception) {
             // Wrong key / corrupted blob — treat as empty rather than crashing.
             // The caller should surface a warning if this matters.
@@ -140,12 +144,59 @@ class IconLibraryRepository(db: AppDatabase) {
     private fun isVersionConflict(e: Exception): Boolean =
         e is ApiException && e.statusCode == 409
 
+    // --- Content de-duplication ------------------------------------------
+
+    /**
+     * Add one icon with content de-dup. If an existing icon matches by either
+     * hash, returns [current] unchanged (the caller keeps the existing icon).
+     * Otherwise persists and returns the new list. Throws when the count or
+     * byte cap would be exceeded.
+     */
+    suspend fun addIcon(
+        vaultKey: ByteArray,
+        current: List<LibraryIcon>,
+        label: String,
+        dataUrl: String,
+        sourceBytes: ByteArray?,
+        api: IconLibraryApi?,
+    ): List<LibraryIcon> {
+        return when (val plan = IconDedup.planAdd(current, label, dataUrl, sourceBytes, { newIconId() }, { nowIso() })) {
+            is IconDedup.AddPlan.Duplicate -> current
+            is IconDedup.AddPlan.CountCapExceeded ->
+                throw IllegalStateException("Icon library is full ($MAX_LIBRARY_ICONS max). Delete some icons first.")
+            is IconDedup.AddPlan.ByteCapExceeded ->
+                throw IllegalStateException("Icon library is full (size limit). Delete some icons first.")
+            is IconDedup.AddPlan.Added -> save(vaultKey, plan.icons, api).icons
+        }
+    }
+
+    /**
+     * Add many icons in one persisted write. De-dups against [current] AND
+     * within the batch; respects the count and byte caps, counting skipped
+     * icons as overflow. Returns the resulting list and a tally.
+     */
+    suspend fun addIconsBatch(
+        vaultKey: ByteArray,
+        current: List<LibraryIcon>,
+        items: List<IconInput>,
+        api: IconLibraryApi?,
+    ): Pair<List<LibraryIcon>, BatchResult> {
+        val (next, result) = IconDedup.planBatch(current, items, { newIconId() }, { nowIso() })
+        if (result.added > 0) save(vaultKey, next, api)
+        return next to result
+    }
+
+    /** One icon to add via [addIcon] / [addIconsBatch], before it gets an id. */
+    class IconInput(val label: String, val dataUrl: String, val sourceBytes: ByteArray?)
+
+    /** Outcome of [addIconsBatch], for user-facing reporting. */
+    class BatchResult(val added: Int, val duplicates: Int, val overflow: Int)
+
     companion object {
+        private fun nowIso(): String = java.time.Instant.now().toString()
+
         /** Generate a fresh library-icon id. Intentionally small wrapper so
          *  callers don't need to know we're using UUIDs. */
         fun newIconId(): String = UUID.randomUUID().toString()
-
-        /** Hard cap — matches MAX_LIBRARY_ICONS in the model. */
-        const val MAX_ICONS = MAX_LIBRARY_ICONS
     }
 }

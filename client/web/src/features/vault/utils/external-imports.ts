@@ -14,6 +14,20 @@ import type { VaultEntryPlaintext } from "@/types/vault-types";
 
 const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
+/**
+ * Build a data-URL from an embedded import icon. Aegis stores raw base64
+ * bytes plus an `icon_mime`; 2FAS custom images, when present, arrive as a
+ * base64 string. Returns undefined for anything that isn't usable image
+ * data (e.g. 2FAS brand-id references, which are objects, not strings).
+ * The import flow re-decodes and resizes this to a normalised 64×64 PNG.
+ */
+function embeddedIconDataUrl(icon: unknown, mime: unknown): string | undefined {
+  if (typeof icon !== "string" || icon.length === 0) return undefined;
+  if (icon.startsWith("data:")) return icon;
+  const mimeType = typeof mime === "string" && mime.length > 0 ? mime : "image/png";
+  return `data:${mimeType};base64,${icon}`;
+}
+
 function base32Encode(bytes: Uint8Array): string {
   if (bytes.length === 0) return "";
   let bits = "";
@@ -152,6 +166,7 @@ export function tryParseAegis(json: unknown): VaultEntryPlaintext[] | null {
       algorithm: String(info.algo ?? "SHA1").toUpperCase(),
       digits: typeof info.digits === "number" ? info.digits : 6,
       period: typeof info.period === "number" ? info.period : 30,
+      icon: embeddedIconDataUrl(e.icon, e.icon_mime),
     });
   }
   return out.length > 0 ? out : null;
@@ -185,6 +200,10 @@ export function tryParse2Fas(json: unknown): VaultEntryPlaintext[] | null {
       algorithm: String(otp.algorithm ?? "SHA1").toUpperCase(),
       digits: typeof otp.digits === "number" ? otp.digits : 6,
       period: typeof otp.period === "number" ? otp.period : 30,
+      // 2FAS icons are usually brand-id references (objects we can't
+      // resolve to bytes); only a rare embedded custom image string yields
+      // a data URL here.
+      icon: embeddedIconDataUrl(svc.icon, undefined),
     });
   }
   return out.length > 0 ? out : null;

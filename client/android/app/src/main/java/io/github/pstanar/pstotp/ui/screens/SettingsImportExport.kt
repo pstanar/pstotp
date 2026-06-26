@@ -129,16 +129,19 @@ fun SettingsImportExport(viewModel: VaultViewModel?) {
     // Import preview + conflict resolution
     val candidates by viewModel.importCandidates.collectAsStateWithLifecycle()
     val currentDuplicateAction by viewModel.duplicateAction.collectAsStateWithLifecycle()
+    val addIconsToLibrary by viewModel.addIconsToLibrary.collectAsStateWithLifecycle()
     candidates?.let { list ->
         ImportPreviewDialog(
             candidates = list,
             duplicateAction = currentDuplicateAction,
+            addIconsToLibrary = addIconsToLibrary,
+            onSetAddIconsToLibrary = viewModel::setAddIconsToLibrary,
             onSetDuplicateAction = viewModel::setDuplicateAction,
             onSetCandidateAction = viewModel::setImportCandidateAction,
             onConfirm = { onComplete ->
-                viewModel.confirmImport { count ->
+                viewModel.confirmImport { summary ->
                     onComplete()
-                    Toast.makeText(context, "Imported $count entries", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, importToastMessage(summary), Toast.LENGTH_SHORT).show()
                 }
             },
             onCancel = { viewModel.cancelImport() },
@@ -237,6 +240,8 @@ private fun ImportPasswordDialog(
 private fun ImportPreviewDialog(
     candidates: List<io.github.pstanar.pstotp.core.model.ImportCandidate>,
     duplicateAction: ImportAction,
+    addIconsToLibrary: Boolean,
+    onSetAddIconsToLibrary: (Boolean) -> Unit,
     onSetDuplicateAction: (ImportAction) -> Unit,
     onSetCandidateAction: (Int, ImportAction) -> Unit,
     onConfirm: (onComplete: () -> Unit) -> Unit,
@@ -244,6 +249,9 @@ private fun ImportPreviewDialog(
 ) {
     val duplicateCount = candidates.count { it.isDuplicate }
     val activeCount = candidates.count { it.action != ImportAction.SKIP }
+    val hasIcons = candidates.any {
+        it.action != ImportAction.SKIP && it.imported.icon?.startsWith("data:") == true
+    }
     var importing by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -268,6 +276,13 @@ private fun ImportPreviewDialog(
                         }
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                }
+
+                if (hasIcons) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = addIconsToLibrary, onCheckedChange = onSetAddIconsToLibrary)
+                        Text("Add icons to My Icons", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
 
                 Column(
@@ -340,4 +355,16 @@ private fun ImportAction.label(): String = when (this) {
     ImportAction.OVERWRITE -> "Overwrite"
     ImportAction.ADD_COPY -> "Add copy"
     ImportAction.SKIP -> "Skip"
+}
+
+private fun importToastMessage(summary: VaultViewModel.ImportSummary): String = buildString {
+    append("Imported ${summary.entries} entries")
+    if (summary.iconsAdded > 0 || summary.iconDuplicates > 0 || summary.iconsOverLimit > 0) {
+        append(" · ${summary.iconsAdded} icon${if (summary.iconsAdded != 1) "s" else ""} added")
+        val extra = buildList {
+            if (summary.iconDuplicates > 0) add("${summary.iconDuplicates} duplicate${if (summary.iconDuplicates != 1) "s" else ""}")
+            if (summary.iconsOverLimit > 0) add("${summary.iconsOverLimit} over limit")
+        }
+        if (extra.isNotEmpty()) append(" (${extra.joinToString(", ")})")
+    }
 }

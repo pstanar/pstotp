@@ -204,6 +204,19 @@ export function generateRecoveryCode(): string {
   return code;
 }
 
+/**
+ * SHA-256 of arbitrary bytes, returned as lowercase hex. Used for icon
+ * content de-duplication (hashing raw source bytes and resized data-URLs).
+ * Not a secret-handling primitive — just a stable content fingerprint.
+ */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
+  const out = new Uint8Array(digest);
+  let hex = "";
+  for (const b of out) hex += b.toString(16).padStart(2, "0");
+  return hex;
+}
+
 export async function hashRecoveryCode(
   code: string,
   salt: Uint8Array,
