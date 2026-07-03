@@ -170,7 +170,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.6.1")
 
     // Drag-to-reorder
-    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
 
     // QR code generation
     implementation("com.google.zxing:core:3.5.3")
