@@ -34,10 +34,10 @@ dependencies {
     implementation("com.lambdapioneer.argon2kt:argon2kt:1.6.0")
 
     // HTTP client
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
 
     // Encrypted storage (Keystore-backed)
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
