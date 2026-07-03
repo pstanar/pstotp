@@ -683,7 +683,7 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
             if (meta.contains(";base64")) {
                 java.util.Base64.getDecoder().decode(payload)
             } else {
-                java.net.URLDecoder.decode(payload, Charsets.UTF_8).toByteArray(Charsets.UTF_8)
+                java.net.URLDecoder.decode(payload, "UTF-8").toByteArray(Charsets.UTF_8)
             }
         } catch (_: Exception) {
             null

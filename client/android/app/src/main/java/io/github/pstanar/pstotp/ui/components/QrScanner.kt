@@ -46,6 +46,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Shows a camera preview and calls onResult when a QR code containing
  * an otpauth:// URI is detected.
  */
+@androidx.annotation.OptIn(markerClass = [androidx.camera.core.ExperimentalGetImage::class])
 @Composable
 fun QrScanner(
     onResult: (String) -> Unit,
@@ -173,7 +174,6 @@ fun QrScanner(
                 imageAnalysisRef.set(imageAnalysis)
 
                 imageAnalysis.setAnalyzer(executor) { imageProxy ->
-                    @androidx.camera.core.ExperimentalGetImage
                     val mediaImage = imageProxy.image
                     if (disposed.get() || mediaImage == null || detected.get()) {
                         imageProxy.close()
