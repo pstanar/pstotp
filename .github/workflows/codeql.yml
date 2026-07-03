@@ -12,6 +12,8 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    # Kotlin 2.4.0 isn't supported by CodeQL yet (github/codeql#21938); don't block CI until it is.
+    continue-on-error: ${{ matrix.language == 'java-kotlin' }}
     permissions:
       security-events: write
       packages: read
