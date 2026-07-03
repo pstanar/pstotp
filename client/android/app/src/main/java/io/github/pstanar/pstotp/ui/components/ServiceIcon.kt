@@ -35,7 +35,7 @@ fun ServiceIcon(
         // Decode data URL: "data:image/png;base64,..." → bitmap
         val bitmap = remember(icon) {
             try {
-                val base64Part = icon!!.substringAfter(",")
+                val base64Part = icon.substringAfter(",")
                 val bytes = Base64.decode(base64Part, Base64.DEFAULT)
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             } catch (_: Exception) {
@@ -64,7 +64,7 @@ fun ServiceIcon(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = icon!!,
+                text = icon,
                 fontSize = (size / 1.8).sp,
             )
         }

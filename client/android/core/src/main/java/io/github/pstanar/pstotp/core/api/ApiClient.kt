@@ -153,7 +153,7 @@ class ApiClient(baseUrl: String) {
         } catch (e: IOException) {
             throw NetworkException(friendlyNetworkMessage(e), e)
         }
-        val responseBody = response.body?.string()
+        val responseBody = response.body.string()
 
         if (!response.isSuccessful) {
             val message = errorMessage(response, responseBody)
@@ -172,7 +172,7 @@ class ApiClient(baseUrl: String) {
     }
 
     private fun errorMessage(response: Response, body: String?): String =
-        buildErrorMessage(response.code, response.body?.contentType()?.subtype, body)
+        buildErrorMessage(response.code, response.body.contentType()?.subtype, body)
 
     private fun friendlyNetworkMessage(e: IOException): String = when (e) {
         is UnknownHostException -> "Server not found. Check the URL and your connection."

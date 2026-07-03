@@ -600,7 +600,7 @@ class AuthService(
         val refreshToken = if (completeResponse.isNull("refreshToken")) null else completeResponse.getString("refreshToken")
         val hasTokens = accessToken != null && refreshToken != null
         if (hasTokens) {
-            persistTokens(accessToken!!, refreshToken!!)
+            persistTokens(accessToken, refreshToken)
         }
 
         // Persist ECDH key pair used for the replacement device envelope

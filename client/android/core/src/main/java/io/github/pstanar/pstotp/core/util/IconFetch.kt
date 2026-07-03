@@ -36,7 +36,7 @@ object IconFetch {
             val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
-                val bytes = response.body?.bytes() ?: return@use null
+                val bytes = response.body.bytes()
                 val dataUrl = resizeBytesToDataUrl(bytes) ?: return@use null
                 FetchedIcon(dataUrl, bytes)
             }
