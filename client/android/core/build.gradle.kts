@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "io.github.pstanar.pstotp.core"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
