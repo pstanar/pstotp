@@ -27,9 +27,9 @@ android {
 
 dependencies {
     // Room (local database)
-    implementation("androidx.room:room-runtime:2.7.1")
-    implementation("androidx.room:room-ktx:2.7.1")
-    ksp("androidx.room:room-compiler:2.7.1")
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
+    ksp("androidx.room:room-compiler:2.8.4")
 
     // Argon2
     implementation("com.lambdapioneer.argon2kt:argon2kt:1.6.0")
@@ -45,5 +45,5 @@ dependencies {
     // Real org.json implementation on the JVM test classpath — Android's
     // stub returns empty strings for everything, which breaks any test that
     // actually parses JSON.
-    testImplementation("org.json:json:20231013")
+    testImplementation("org.json:json:20250517")
 }
