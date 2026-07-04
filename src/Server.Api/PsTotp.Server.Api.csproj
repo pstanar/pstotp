@@ -62,27 +62,27 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.7" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
-    <!-- Pin past CVE-2026-49451 (NU1903): Microsoft.AspNetCore.OpenApi 10.0.7 still floors
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <!-- Pin past CVE-2026-49451 (NU1903): Microsoft.AspNetCore.OpenApi 10.0.9 still floors
          Microsoft.OpenApi at the vulnerable 2.0.0 (GHSA-v5pm-xwqc-g5wc). Remove once
          Microsoft.AspNetCore.OpenApi's transitive floor moves past 2.7.5 on its own. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
-    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.7">
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.203">
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.301">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.7" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.14.3" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.16.10" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Process" Version="3.0.0" />
