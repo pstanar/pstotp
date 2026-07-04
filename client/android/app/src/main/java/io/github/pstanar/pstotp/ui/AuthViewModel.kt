@@ -32,11 +32,13 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = VaultRepository(db)
     val apiClient = ApiClient("").apply {
         onTokensRefreshed = { access, refresh ->
-            // commit() instead of apply() — synchronous write ensures tokens survive a crash
-            io.github.pstanar.pstotp.core.crypto.SecureStore.getInstance(application).edit()
-                .putString(io.github.pstanar.pstotp.core.crypto.SecureStore.ACCESS_TOKEN, access)
-                .putString(io.github.pstanar.pstotp.core.crypto.SecureStore.REFRESH_TOKEN, refresh)
-                .commit()
+            io.github.pstanar.pstotp.core.crypto.SecureStore.setAll(
+                application,
+                mapOf(
+                    io.github.pstanar.pstotp.core.crypto.SecureStore.ACCESS_TOKEN to access,
+                    io.github.pstanar.pstotp.core.crypto.SecureStore.REFRESH_TOKEN to refresh,
+                ),
+            )
         }
     }
     private val authApi = AuthApi(apiClient)

@@ -126,11 +126,10 @@ class AuthService(
     /** Write both tokens atomically to SecureStore and update in-memory client. */
     private fun persistTokens(accessToken: String, refreshToken: String) {
         apiClient.setTokens(accessToken, refreshToken)
-        // commit() for synchronous write — tokens must survive a crash
-        SecureStore.getInstance(context).edit()
-            .putString(SecureStore.ACCESS_TOKEN, accessToken)
-            .putString(SecureStore.REFRESH_TOKEN, refreshToken)
-            .commit()
+        SecureStore.setAll(
+            context,
+            mapOf(SecureStore.ACCESS_TOKEN to accessToken, SecureStore.REFRESH_TOKEN to refreshToken),
+        )
     }
 
     suspend fun isConnected(): Boolean =
@@ -701,9 +700,8 @@ class AuthService(
     /** Restore API client tokens from persisted settings (called on app startup). */
     suspend fun restoreSession() {
         val serverUrl = settingsDao.get(SettingsKeys.SERVER_URL) ?: return
-        val prefs = SecureStore.getInstance(context)
-        val accessToken = prefs.getString(SecureStore.ACCESS_TOKEN, null) ?: return
-        val refreshToken = prefs.getString(SecureStore.REFRESH_TOKEN, null) ?: return
+        val accessToken = SecureStore.get(context, SecureStore.ACCESS_TOKEN) ?: return
+        val refreshToken = SecureStore.get(context, SecureStore.REFRESH_TOKEN) ?: return
         apiClient.baseUrl = serverUrl.trimEnd('/')
         apiClient.setTokens(accessToken, refreshToken)
     }
@@ -712,7 +710,7 @@ class AuthService(
 
     /**
      * Load or generate ECDH key pair.
-     * Keys are stored in EncryptedSharedPreferences (Keystore-backed),
+     * Keys are stored in SecureStore (Keystore-backed),
      * NOT wrapped with the vault key — this breaks the circular dependency
      * so the device envelope can decrypt without the password.
      */
