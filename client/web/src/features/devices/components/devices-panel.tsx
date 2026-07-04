@@ -28,8 +28,13 @@ export function DevicesPanel() {
   }, []);
 
   useEffect(() => {
-    void loadDevices();
-  }, [loadDevices]);
+    let ignore = false;
+    fetchDevices()
+      .then((response) => { if (!ignore) setDevices(response.devices); })
+      .catch(() => { if (!ignore) setError("Failed to load devices."); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, []);
 
   const handleApprove = async (device: DeviceInfo) => {
     setActionError(null);

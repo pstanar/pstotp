@@ -107,12 +107,18 @@ export function VaultPage() {
     return () => { document.title = "PsTotp"; };
   }, [email]);
 
-  // Auto-select first entry in grid view
-  useEffect(() => {
+  // Auto-select first entry in grid view. Adjusted during render (rather than
+  // in an effect) so the selection updates in the same render pass as the
+  // entries/layout change that invalidated it.
+  const [prevEntriesForSelection, setPrevEntriesForSelection] = useState(entries);
+  const [prevLayoutForSelection, setPrevLayoutForSelection] = useState(layout);
+  if (entries !== prevEntriesForSelection || layout !== prevLayoutForSelection) {
+    setPrevEntriesForSelection(entries);
+    setPrevLayoutForSelection(layout);
     if (layout === "grid" && entries.length > 0 && !entries.find((e) => e.id === selectedId)) {
       setSelectedId(entries[0].id);
     }
-  }, [layout, entries, selectedId]);
+  }
 
   const switchLayout = (l: ViewLayout) => {
     setLayout(l);

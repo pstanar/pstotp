@@ -61,13 +61,21 @@ export function AuditPanel() {
   }, []);
 
   useEffect(() => {
-    void loadEvents();
-  }, [loadEvents]);
+    let ignore = false;
+    fetchAuditEvents()
+      .then((response) => { if (!ignore) setEvents(response.events); })
+      .catch(() => { if (!ignore) setError("Failed to load audit events."); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, []);
 
   // Reset page when filters change
-  useEffect(() => {
+  const filterKey = `${searchQuery}|${eventTypeFilter}|${dateRange}|${pageSize}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
     setPage(0);
-  }, [searchQuery, eventTypeFilter, dateRange, pageSize]);
+  }
 
   const filteredEvents = useMemo(() => {
     let result = events;

@@ -39,8 +39,13 @@ export function WebAuthnManagement() {
   }, []);
 
   useEffect(() => {
-    void loadCredentials();
-  }, [loadCredentials]);
+    let ignore = false;
+    listCredentials()
+      .then((result) => { if (!ignore) setCredentials(result.credentials); })
+      .catch(() => { if (!ignore) setError("Failed to load passkeys."); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, []);
 
   const handleRegister = async () => {
     setError(null);
