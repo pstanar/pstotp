@@ -13,7 +13,13 @@ RIDS=("win-x64" "linux-x64" "osx-arm64")
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
 BUILD=$(git describe --tags --long 2>/dev/null | sed 's/.*-\([0-9]*\)-g.*/\1/' || echo "0")
 SHA=$(git rev-parse --short HEAD)
-echo "Version: $VERSION.$BUILD+$SHA"
+VERSION_SHA="g${SHA}"
+if [[ "$BUILD" == '0' ]]; then
+    VERSION_LABEL="$VERSION"
+else
+    VERSION_LABEL="${VERSION}.${BUILD}"
+fi
+echo "Version: ${VERSION_LABEL}+${VERSION_SHA}"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
@@ -38,7 +44,7 @@ echo "    docs/openapi.json up to date."
 
 # Build SPA once — all publishes reuse wwwroot
 echo "=== Building SPA ==="
-(cd "$SPA_DIR" && npm ci && VITE_APP_VERSION="$VERSION+$SHA" npm run build:deploy)
+(cd "$SPA_DIR" && npm ci && VITE_APP_VERSION="${VERSION_LABEL}+${VERSION_SHA}" npm run build:deploy)
 
 # Third-party licenses — machine-readable manifests for all dependencies
 # bundled into release artifacts. Shipping these satisfies the attribution
@@ -99,7 +105,7 @@ if [ -n "${SKIP_DOCKER_IMAGE:-}" ]; then
 else
     echo ""
     echo "=== Building Docker image ==="
-    docker build --build-arg APP_VERSION="$VERSION+$SHA" -t pstotp -t "pstotp:$VERSION" "$SCRIPT_DIR"
+    docker build --build-arg APP_VERSION="${VERSION_LABEL}+${VERSION_SHA}" -t pstotp -t "pstotp:$VERSION" "$SCRIPT_DIR"
 fi
 
 # Platform publishes
@@ -122,7 +128,8 @@ for RID in "${RIDS[@]}"; do
             -p:SkipSpa=true \
             -p:Version="$VERSION" \
             -p:FileVersion="$VERSION.$BUILD" \
-            -p:SourceRevisionId="$SHA" \
+            -p:InformationalVersion="$VERSION_LABEL" \
+            -p:SourceRevisionId="$VERSION_SHA" \
             -o "$OUT_DIR/$NAME"
 
         # Ship the third-party license manifests inside each archive so

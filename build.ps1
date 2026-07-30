@@ -15,7 +15,9 @@ $Version = $Version -replace '^v', ''
 $Long = git describe --tags --long 2>$null
 if ($Long -match '-(\d+)-g') { $Build = $Matches[1] } else { $Build = '0' }
 $Sha = git rev-parse --short HEAD
-Write-Host "Version: $Version.$Build+$Sha"
+$VersionSha = "g$Sha"
+$VersionLabel = if ($Build -eq '0') { $Version } else { "$Version.$Build" }
+Write-Host "Version: $VersionLabel+$VersionSha"
 
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item $OutDir -ItemType Directory | Out-Null
@@ -50,7 +52,7 @@ Write-Host "`n=== Building SPA ==="
 Push-Location $SpaDir
 try {
     npm ci
-    $env:VITE_APP_VERSION = "$Version+$Sha"
+    $env:VITE_APP_VERSION = "$VersionLabel+$VersionSha"
     npm run build:deploy
 } finally {
     Remove-Item Env:\VITE_APP_VERSION -ErrorAction SilentlyContinue
@@ -129,7 +131,7 @@ if ($env:SKIP_DOCKER_IMAGE) {
     Write-Host "`n=== Skipping server Docker image (SKIP_DOCKER_IMAGE set) ==="
 } else {
     Write-Host "`n=== Building Docker image ==="
-    docker build --build-arg "APP_VERSION=$Version+$Sha" -t pstotp -t "pstotp:$Version" $ScriptDir
+    docker build --build-arg "APP_VERSION=$VersionLabel+$VersionSha" -t pstotp -t "pstotp:$Version" $ScriptDir
     if ($LASTEXITCODE -ne 0) { throw "docker build failed (exit $LASTEXITCODE)" }
 }
 
@@ -148,7 +150,8 @@ foreach ($Rid in $Rids) {
             -p:SkipSpa=true `
             "-p:Version=$Version" `
             "-p:FileVersion=$Version.$Build" `
-            "-p:SourceRevisionId=$Sha" `
+            "-p:InformationalVersion=$VersionLabel" `
+            "-p:SourceRevisionId=$VersionSha" `
             -o "$OutDir/$Name"
 
         # Ship the third-party license manifests inside each archive so
