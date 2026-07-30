@@ -39,7 +39,11 @@ RUN dotnet restore src/Server.Api/PsTotp.Server.Api.csproj
 # dotnet-project-licenses at the version pinned in .config/dotnet-tools.json
 # so the output is reproducible between host builds and container builds.
 COPY .config/dotnet-tools.json .config/dotnet-tools.json
-RUN dotnet tool restore \
+# dotnet-project-licenses has never shipped a build past net7.0; force
+# roll-forward across major versions so it runs on the net10.0-only
+# runtime in this image instead of failing with a missing-framework error.
+RUN export DOTNET_ROLL_FORWARD=LatestMajor \
+    && dotnet tool restore \
     && mkdir -p /licenses/nuget \
     && dotnet dotnet-project-licenses --input src --include-transitive --unique --json --output-directory /licenses/nuget \
     && dotnet dotnet-project-licenses --input src --include-transitive --unique --md   --output-directory /licenses/nuget
