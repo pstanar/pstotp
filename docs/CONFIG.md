@@ -295,6 +295,12 @@ Array entries use index suffixes: `Fido2:Origins:0`, `Fido2:Origins:1`,
 - Purpose: When `true`, the server opens the system default browser
   to the server's URL at startup. Handy for double-click use.
 - Notes: Set to `false` for headless / systemd / Docker deployments.
+  Known bug: once a `Kestrel__Certificates__Default__*` cert is
+  configured (e.g. for the mkcert-based local HTTPS setup in
+  `docs/DEPLOY.md`), URL resolution for this feature breaks and it
+  fails to open the browser — Kestrel still binds and serves fine
+  regardless. Set this to `false` and open the browser yourself (or
+  from a launcher script) when running with a custom cert.
 
 ## Admin
 

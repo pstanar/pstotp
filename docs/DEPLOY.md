@@ -167,9 +167,50 @@ Categories=Utility;Security;
 the application menu and can be pinned to dock/panel.
 
 **macOS**: place the binary under `/Applications/PsTotp/` (or wherever
-you prefer) and either drag it to the Dock, or wrap it in a small
-AppleScript applet via Script Editor → **File → Export → Application**
-running `do shell script "/path/to/PsTotp.Server.Api &"`.
+you prefer). **Don't** wrap it in an AppleScript applet exported as an
+Application — Gatekeeper rejects any ad-hoc-signed (or unsigned) `.app`
+bundle launched via `open`/Finder (`spctl -a -vv` reports "rejected"),
+and an applet exported from Script Editor is ad-hoc signed. This is
+specific to LaunchServices-mediated launches; running the raw binary
+from Terminal works fine.
+
+Ship a `.command` file instead — it's a shell script, so Gatekeeper's
+app-bundle signature check never applies:
+
+```bash
+# /Applications/PsTotp/PsTotp.command
+#!/bin/bash
+cd "$(dirname "$0")"
+./PsTotp.Server.Api
+```
+
+`chmod +x PsTotp.command`, then double-click it in Finder (or drag it
+to the Dock). It opens in Terminal, which also means you get a visible
+log/console for free.
+
+To give it a custom icon instead of the generic script glyph (Finder
+doesn't pick one up automatically for `.command` files):
+
+```bash
+# Build an .icns from an existing PNG/ICO
+sips -s format png favicon.ico --out favicon.png
+mkdir PsTotp.iconset
+for size in 16 32 128 256 512; do
+  sips -z $size $size favicon.png --out "PsTotp.iconset/icon_${size}x${size}.png"
+  sips -z $((size*2)) $((size*2)) favicon.png --out "PsTotp.iconset/icon_${size}x${size}@2x.png"
+done
+iconutil -c icns PsTotp.iconset -o PsTotp.icns
+
+# Apply it (no need for deprecated Rez/SetFile)
+osascript -l JavaScript -e '
+ObjC.import("AppKit");
+var ws = $.NSWorkspace.sharedWorkspace;
+var icon = $.NSImage.alloc.initWithContentsOfFile("/Applications/PsTotp/PsTotp.icns");
+ws.setIconForFileOptions(icon, "/Applications/PsTotp/PsTotp.command", 0);
+'
+touch /Applications/PsTotp/PsTotp.command   # bump mtime
+killall Finder                              # clear Finder's icon cache
+```
 
 ### Behavioural notes
 
@@ -186,6 +227,18 @@ running `do shell script "/path/to/PsTotp.Server.Api &"`.
   can reach it at `http://<your-hostname>:5000`. If you only want it
   accessible from the same machine, bind to loopback by setting
   `ASPNETCORE_URLS=http://127.0.0.1:5000`.
+- The server shuts itself down when the last browser tab/window showing
+  the app closes (the SPA calls `POST /api/system/closing` on
+  `beforeunload`). This is by design, not a crash — expected if you see
+  "Application is shutting down..." in the log right after closing tabs.
+- **Safari (macOS/iOS) will not stay logged in over plain `http://`**,
+  including `http://localhost` — unlike Chrome, Safari has no
+  localhost/127.0.0.1 exception for `Secure`-flagged cookies. Login
+  itself returns 200, but the very next API call 401s and bounces back
+  to the login screen. If any of your users are on Safari, use real
+  HTTPS (see the mkcert recipe under [HTTPS directly on the
+  server](#https-directly-on-the-server-dev--lan-only)) rather than
+  trying to work around it with hostnames.
 
 ## Lightweight always-on launchers (no service registration)
 
@@ -426,10 +479,12 @@ and Windows will not automatically restart it.
 
 ## macOS
 
-macOS is a best-effort target. The author does not own Apple hardware and
-does not regularly run the stack there. The self-contained `osx-arm64`
-build in `publish/` should launch, but issues are resolved on a
-best-effort basis only.
+macOS is a best-effort target — most of it isn't run regularly by the
+maintainers, so issues are resolved on a best-effort basis. The
+run-on-demand path (self-contained `osx-arm64` binary + `.command`
+launcher, see [Desktop shortcut](#desktop-shortcut) above) has been
+verified end-to-end, including the Gatekeeper and Safari cookie
+gotchas noted there. The `launchd` service setup below has not.
 
 A minimal `launchd` plist for running as a LaunchDaemon:
 
@@ -848,6 +903,58 @@ enables a self-signed cert on port 5001. Good for testing against Android
 Credential Manager on your LAN (Credential Manager requires HTTPS). **Not**
 intended for internet-facing deployments — passkey RP validation gets
 finicky with self-signed certs, and browsers will warn your users.
+
+#### Trusted local HTTPS with mkcert (Safari / single-machine self-hosting)
+
+`EnableHttps`'s self-signed cert is untrusted, so browsers show a
+warning (and some, Safari included, block API `fetch()` calls to an
+untrusted origin outright even after you click through the page
+warning). If you need real Safari support on a single machine —
+covered above under Behavioural notes — install a locally-trusted CA
+with [mkcert](https://github.com/FiloSottile/mkcert) and issue a leaf
+cert from it instead:
+
+```bash
+brew install mkcert
+mkcert -install   # trusts mkcert's root CA; needs sudo (System keychain), or run:
+security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db "$(mkcert -CAROOT)/rootCA.pem"
+# ^ login-keychain variant needs no sudo, just an unlocked keychain
+
+# mkcert's own CLI has no --validity flag, so issue the leaf with openssl.
+# san.cnf needs: subjectAltName = DNS:localhost, IP:127.0.0.1, IP:::1
+openssl x509 -req -in localhost.csr \
+  -CA "$(mkcert -CAROOT)/rootCA.pem" -CAkey "$(mkcert -CAROOT)/rootCA-key.pem" -CAcreateserial \
+  -out localhost-cert.pem -days 825 -sha256 \
+  -extfile san.cnf -extensions v3_req
+
+openssl pkcs12 -export -out pstotp-localhost.pfx -inkey localhost-key.pem -in localhost-cert.pem -passout pass:...
+```
+
+Cap the leaf cert at **825 days** even against your own trusted root —
+macOS enforces Apple's max-certificate-validity policy on any chain,
+including custom CAs added to the login/System keychain. A 5-year leaf
+cert against a manually-trusted root still fails `security verify-cert`
+with `CSSMERR_TP_CERT_SUSPENDED`; 825 days passes cleanly. This is why
+`mkcert` itself hardcodes 825 days for leaf certs.
+
+Wire the PFX into Kestrel via env vars (ASP.NET binds the `Kestrel`
+config section from environment variables automatically, no code
+changes needed):
+
+```bash
+export ASPNETCORE_URLS="https://localhost:5987"
+export ASPNETCORE_Kestrel__Certificates__Default__Path="/path/to/pstotp-localhost.pfx"
+export ASPNETCORE_Kestrel__Certificates__Default__Password="..."
+```
+
+**Known caveat:** once a `Kestrel__Certificates__Default__*` cert is
+configured, the built-in `OpenBrowser` auto-launch (see
+[Configuration](CONFIG.md#openbrowser)) resolves the wrong URL and
+fails to open anything — Kestrel itself still binds and serves
+correctly. Set `OpenBrowser=false` and have your launcher script open
+the browser itself (e.g. poll the HTTPS URL with `curl` until it's up,
+then `open`/`xdg-open`/`start` it) instead of relying on the server to
+do it when a custom cert is in play.
 
 ## Configuration and secrets
 

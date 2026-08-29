@@ -223,6 +223,27 @@ explicit "clear force reset" button because a successful reset clears
 it automatically. Easiest path: guide the user through
 **Forgot password** from the login screen (email + new password).
 
+### "This device is pending approval" on a brand-new, single-device account
+
+**Cause.** The device created at registration time is auto-approved —
+this only happens when the login-time device doesn't match that one.
+Almost always: the browser already had a `deviceId` cached in
+`localStorage` from an earlier test (that ID persists independently of
+the server DB — wiping the server database does **not** clear it), so
+after a fresh registration a subsequent login presents that old,
+unrecognized ID and the server creates it as a new `Pending` device.
+Device approval is only reachable from Settings on an *already-approved*
+device, which a solo, single-device account doesn't have — this can
+look like a lockout.
+
+**Fix.** For a genuine "test a fresh device" scenario, clear the
+browser's local storage for the site (or use a Private/Incognito
+window) in addition to resetting the server DB. For a real user stuck
+in this state with no second device, walk them through **recover with
+a code** (the recovery codes shown once at registration) rather than
+expecting the first device to auto-approve itself — that's the
+intended bootstrap path, not a first-device auto-approve.
+
 ### Android passkey: "No passkeys available" / "No credentials"
 
 **Cause.** Credential Manager couldn't match any stored credential to
@@ -254,6 +275,20 @@ or the user cancelled the Credential Manager / Windows Hello prompt.
 browser URL, and `Fido2:Origins` contains the full origin. If it's
 a user cancellation, their next attempt should work; a repeat
 failure on a fresh attempt points at config.
+
+### Safari: login succeeds, then immediately bounces back to the login screen
+
+**Cause.** `login`/`login/complete` return 200 (credentials really are
+fine) but the very next call (`GET /api/vault`, refresh) 401s, every
+time. The auth cookies are `Secure`-flagged; Safari refuses to store
+`Secure` cookies over plain `http://`, and — unlike Chrome — has no
+exception for `localhost`/`127.0.0.1`. Looks exactly like a credentials
+bug; it isn't.
+
+**Fix.** Serve over real HTTPS. See the mkcert recipe in
+`docs/DEPLOY.md` under "HTTPS directly on the server" for a
+single-machine/self-hosted setup with a locally-trusted cert (a
+reverse proxy with a real cert also works, of course).
 
 ### Tokens accepted in one browser tab, rejected in another
 
@@ -401,6 +436,19 @@ storage in a way that affects the PsTotp origin.
 **Fix.** Use a normal browser profile. PsTotp needs IndexedDB for the
 device ECDH private key; without it, passkey-driven login can't
 rebuild envelopes.
+
+### Testing against a freshly wiped server DB still shows the old account/device
+
+**Cause.** The client persists `deviceId`/`userId`/`email`/`role` in
+`localStorage`, scoped to the origin. Wiping the server-side database
+doesn't touch the browser's storage, so it keeps presenting identity
+the fresh DB has never seen — see also ["This device is pending
+approval" on a brand-new, single-device account](#this-device-is-pending-approval-on-a-brand-new-single-device-account)
+above, which is usually the same root cause.
+
+**Fix.** Clear local storage for the site (DevTools → Application →
+Local Storage), or use a Private/Incognito window, whenever you need a
+truly clean "fresh device" test.
 
 ### TOTP codes are consistently wrong by one interval
 
