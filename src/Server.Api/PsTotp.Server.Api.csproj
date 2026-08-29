@@ -61,6 +61,17 @@
     <InternalsVisibleTo Include="PsTotp.Tests" />
   </ItemGroup>
 
+  <!--
+    Dev-only config: hardcoded JWT dev secret / local DB credentials. Keep them
+    copied to the build output (bin/) for `dotnet run`/F5, but never let
+    `dotnet publish` (Docker image, archive releases) ship them.
+  -->
+  <ItemGroup>
+    <Content Update="appsettings.Development.json;appsettings.LocalProduction.json">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
