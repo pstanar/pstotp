@@ -78,10 +78,17 @@ try
     {
         app.Lifetime.ApplicationStarted.Register(() =>
         {
-            // Resolve the actual listening address
+            // Resolve the actual listening address. Prefer http over https
+            // (no cert warning) but fall back to https when that's all
+            // that's bound — e.g. a custom Kestrel cert with no plain-http
+            // URL configured.
             var addresses = app.Urls;
             var url = addresses.FirstOrDefault(a => a.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase))
+                      ?? addresses.FirstOrDefault(a => a.StartsWith("https://localhost", StringComparison.OrdinalIgnoreCase))
                       ?? addresses.FirstOrDefault(a => a.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                         ?.Replace("0.0.0.0", "localhost")
+                         .Replace("[::]", "localhost")
+                      ?? addresses.FirstOrDefault(a => a.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                          ?.Replace("0.0.0.0", "localhost")
                          .Replace("[::]", "localhost")
                       ?? AuthConstants.DefaultProductionOrigin;
