@@ -78,6 +78,17 @@ const migration = Buffer.concat([
 ]);
 const migrationUri = "otpauth-migration://offline?data=" + encodeURIComponent(migration.toString("base64"));
 
+
+// Stored vault-entry payload as Android/web write it: AES-256-GCM over the JSON plaintext with the
+// entry id (UTF-8) as associated data, laid out nonce(12) || ciphertext || tag(16).
+const veKey = bytes(32, (i) => 0xf0 - i);
+const veId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+const vePlain = { issuer: "Example", accountName: "alice@example.com", secret: "JBSWY3DPEHPK3PXP", algorithm: "SHA256", digits: 8, period: 60, icon: "🏦" };
+const veNonce = bytes(12, (i) => 0x50 + i);
+const veGcm = createCipheriv("aes-256-gcm", veKey, veNonce);
+veGcm.setAAD(Buffer.from(veId, "utf8"));
+const vePayload = Buffer.concat([veNonce, veGcm.update(JSON.stringify(vePlain), "utf8"), veGcm.final(), veGcm.getAuthTag()]);
+
 const salt16 = bytes(16, (i) => i + 1);
 const out = {
   hkdf: [
@@ -143,6 +154,9 @@ const out = {
       nonce: exportNonce.toString("base64"),
     },
     googleMigrationUri: migrationUri,
+  },
+  vaultEntry: {
+    vaultKeyHex: hex(veKey), id: veId, payloadBase64: vePayload.toString("base64"), plaintext: vePlain,
   },
   base32: [
     "", "f", "fo", "foo", "foob", "fooba", "foobar",

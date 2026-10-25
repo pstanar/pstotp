@@ -7,6 +7,9 @@ let package = Package(
     products: [
         .library(name: "PsTotpCore", targets: ["PsTotpCore"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+    ],
     targets: [
         // Vendored Argon2 reference implementation (CC0 / Apache-2.0). See Sources/CArgon2/README.md.
         .target(
@@ -15,7 +18,10 @@ let package = Package(
             sources: ["argon2.c", "core.c", "encoding.c", "ref.c", "thread.c", "blake2/blake2b.c"],
             publicHeadersPath: "include"
         ),
-        .target(name: "PsTotpCore", dependencies: ["CArgon2"]),
+        .target(
+            name: "PsTotpCore",
+            dependencies: ["CArgon2", .product(name: "GRDB", package: "GRDB.swift")]
+        ),
         .testTarget(
             name: "PsTotpCoreTests",
             dependencies: ["PsTotpCore"],
