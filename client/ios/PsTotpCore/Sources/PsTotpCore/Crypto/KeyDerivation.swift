@@ -11,7 +11,7 @@ public enum KeyDerivation {
     private static let recoveryUnlockContext = "totp-vault-recovery-unlock-v1"
     public static let deviceEcdhKeyContext = "device-ecdh-private-key-v1"
 
-    public struct SetupResult {
+    public struct SetupResult: Sendable {
         public let salt: Data
         public let verifier: Data
         public let encryptedVaultKey: Data

@@ -46,6 +46,10 @@ struct Vectors: Decodable {
         let encryptedExport: EncryptedExport; let googleMigrationUri: String
     }
 
+    struct VaultEntryFixture: Decodable {
+        let vaultKeyHex: String; let id: String; let payloadBase64: String; let plaintext: Entry
+    }
+
     let hkdf: [Hkdf]
     let hmacSha256: [Hmac]
     let sha256: [Sha]
@@ -54,6 +58,7 @@ struct Vectors: Decodable {
     let totp: [Totp]
     let base32: [B32]
     let exportFixtures: ExportFixtures
+    let vaultEntry: VaultEntryFixture
 
     static let shared: Vectors = {
         let url = Bundle.module.url(forResource: "crypto-vectors", withExtension: "json", subdirectory: "Vectors")!
