@@ -1,0 +1,321 @@
+{
+  "hkdf": [
+    {
+      "ikmHex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "info": "",
+      "length": 42,
+      "okmHex": "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
+    },
+    {
+      "ikmHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "auth-verifier-v1",
+      "length": 32,
+      "okmHex": "c3bcca55e782ccd2b8405e309045fc8fb05edbb6715d82ecba80d8d86d0eb1d1"
+    },
+    {
+      "ikmHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "vault-password-envelope-v1",
+      "length": 32,
+      "okmHex": "aee30a5456200c801c4cf1b6000de3f0162f1edd1bfc3ffa9cbaf7f518fd0108"
+    },
+    {
+      "ikmHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "totp-vault-recovery-unlock-v1",
+      "length": 32,
+      "okmHex": "0355ece5ab4c4bdd52afaabc6f32a933f2f99688f6fb6f34a9226df9f9924ec4"
+    },
+    {
+      "ikmHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "device-envelope-v1",
+      "length": 32,
+      "okmHex": "b7aac69370201ff42cf3a88c726348be5c62fff549137ebe8c71a2da588d76a1"
+    },
+    {
+      "ikmHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "test",
+      "length": 64,
+      "okmHex": "ee2d74b5581380b94518efd1a6da0de5655d58b2f082dccc9f645e52e0ebfbdbcee2f82bcde7e751dfb414472a868f9daa7eca299392b1406aa580bf914332db"
+    }
+  ],
+  "hmacSha256": [
+    {
+      "keyHex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "messageHex": "74657374206d657373616765",
+      "macHex": "31fdfcc1b18e5864c6798183a20ec778c332995779fff58bd929b6c51c9eed0c"
+    }
+  ],
+  "sha256": [
+    {
+      "inputHex": "",
+      "digestHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "inputHex": "616263",
+      "digestHex": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    }
+  ],
+  "argon2id": [
+    {
+      "password": "correct horse battery staple",
+      "saltHex": "0102030405060708090a0b0c0d0e0f10",
+      "memoryKb": 65536,
+      "iterations": 3,
+      "parallelism": 4,
+      "hashHex": "6ec690471257037ee9c75b275e6161c1c2f4335ab541400534dba6769a444397"
+    },
+    {
+      "password": "pässwörd-日本語-🔑",
+      "saltHex": "0102030405060708090a0b0c0d0e0f10",
+      "memoryKb": 65536,
+      "iterations": 3,
+      "parallelism": 4,
+      "hashHex": "cbd8ea2b3bcca471e2e7348d304581bd38ea8e50d1ac2dae20880a7052faca1d"
+    },
+    {
+      "password": "password",
+      "saltHex": "0102030405060708090a0b0c0d0e0f10",
+      "memoryKb": 32768,
+      "iterations": 2,
+      "parallelism": 1,
+      "hashHex": "f5becdf540e0c345f2c8b5940fcfb58f6456e827bb856eacd1e875756c18263c"
+    }
+  ],
+  "keyDerivation": {
+    "password": "correct horse battery staple",
+    "saltHex": "0102030405060708090a0b0c0d0e0f10",
+    "authKeyHex": "6ec690471257037ee9c75b275e6161c1c2f4335ab541400534dba6769a444397",
+    "verifierHex": "adea00bbc4234380e0ccd81d378b848ded01e9d44140454caf7ae745a4cc9654",
+    "envelopeKeyHex": "8794da18f2d2a5d56aa2c18f64c13149c7896fef5c83dca1df7c75cea5359bdb",
+    "recoveryUnlockKeyHex": "17e52acbc90e9908f2c433ff062174ac4ca9a118cd66b4e3d93da2154497ad66"
+  },
+  "totp": [
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "algorithm": "SHA1",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 59,
+      "code": "94287082"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "algorithm": "SHA1",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1111111109,
+      "code": "07081804"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "algorithm": "SHA1",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1111111111,
+      "code": "14050471"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "algorithm": "SHA1",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1234567890,
+      "code": "89005924"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "algorithm": "SHA1",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 2000000000,
+      "code": "69279037"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "algorithm": "SHA1",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 20000000000,
+      "code": "65353130"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA",
+      "algorithm": "SHA256",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 59,
+      "code": "46119246"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA",
+      "algorithm": "SHA256",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1111111109,
+      "code": "68084774"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA",
+      "algorithm": "SHA256",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1111111111,
+      "code": "67062674"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA",
+      "algorithm": "SHA256",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1234567890,
+      "code": "91819424"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA",
+      "algorithm": "SHA256",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 2000000000,
+      "code": "90698825"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA",
+      "algorithm": "SHA256",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 20000000000,
+      "code": "77737706"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA",
+      "algorithm": "SHA512",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 59,
+      "code": "90693936"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA",
+      "algorithm": "SHA512",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1111111109,
+      "code": "25091201"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA",
+      "algorithm": "SHA512",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1111111111,
+      "code": "99943326"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA",
+      "algorithm": "SHA512",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1234567890,
+      "code": "93441116"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA",
+      "algorithm": "SHA512",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 2000000000,
+      "code": "38618901"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA",
+      "algorithm": "SHA512",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 20000000000,
+      "code": "47863826"
+    },
+    {
+      "secretBase32": "JBSWY3DPEHPK3PXP",
+      "algorithm": "SHA1",
+      "digits": 6,
+      "period": 30,
+      "timestamp": 1234567890,
+      "code": "742275"
+    },
+    {
+      "secretBase32": "JBSWY3DPEHPK3PXP",
+      "algorithm": "SHA1",
+      "digits": 8,
+      "period": 30,
+      "timestamp": 1234567890,
+      "code": "94742275"
+    },
+    {
+      "secretBase32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "algorithm": "SHA1",
+      "digits": 6,
+      "period": 60,
+      "timestamp": 1234567890,
+      "code": "713351"
+    }
+  ],
+  "exportFixtures": {
+    "entries": [
+      {
+        "issuer": "Example",
+        "accountName": "alice@example.com",
+        "secret": "JBSWY3DPEHPK3PXP",
+        "algorithm": "SHA1",
+        "digits": 6,
+        "period": 30
+      },
+      {
+        "issuer": "Bank/Corp",
+        "accountName": "bob: work",
+        "secret": "NBSWY3DPFQQHO33SNRSCC",
+        "algorithm": "SHA256",
+        "digits": 8,
+        "period": 60,
+        "icon": "🏦"
+      }
+    ],
+    "password": "export pässword 🔐",
+    "encryptedExport": {
+      "version": 1,
+      "format": "pstotp-export",
+      "salt": "oKGio6SlpqeoqaqrrK2urw==",
+      "ciphertext": "pT/i69PSEbtVqa48EZTpWc38Be+45ae+0mxymyGTZ+OD8em1NZgzYHhR/9I5Qz2e1UiQihziLe9TRUBtwfHOD6iLIRPaM3vGcCKPpfuaTNu2F1FHt/jxXrx5nQqOzUh665HAcQdjLIB8kIMJxuXVCzgrsu3BGjFcVJyyG2AUgsMFlgUtRICbdzubgqlHRt9WV8jMyd3nwqgyiSt4cgSvkAV7G1cfCfax4vrHXIp/lAUYLJQAvkBC9t2BjTd/fhHTSJ51eaiSMdeW/Knc8dRbVmvqJDy+vYU89TGDmaszzTSIkLvQ5KcASW/J/Vl01AgrwpyL8kEi0uNyYSNEz8Zgu5lGAxw6dUenrCxvcMSK5OM5XpQ15ZF6/uq5",
+      "nonce": "MDEyMzQ1Njc4OTo7"
+    },
+    "googleMigrationUri": "otpauth-migration://offline?data=Ci4KCkhlbGxvId6tvu8SEWFsaWNlQGV4YW1wbGUuY29tGgdFeGFtcGxlIAEoATACChwKDWhlbGxvLCB3b3JsZCESA2JvYhoAIAIoAjACEAE%3D"
+  },
+  "base32": [
+    {
+      "inputHex": "",
+      "encoded": ""
+    },
+    {
+      "inputHex": "66",
+      "encoded": "MY"
+    },
+    {
+      "inputHex": "666f",
+      "encoded": "MZXQ"
+    },
+    {
+      "inputHex": "666f6f",
+      "encoded": "MZXW6"
+    },
+    {
+      "inputHex": "666f6f62",
+      "encoded": "MZXW6YQ"
+    },
+    {
+      "inputHex": "666f6f6261",
+      "encoded": "MZXW6YTB"
+    },
+    {
+      "inputHex": "666f6f626172",
+      "encoded": "MZXW6YTBOI"
+    }
+  ]
+}
