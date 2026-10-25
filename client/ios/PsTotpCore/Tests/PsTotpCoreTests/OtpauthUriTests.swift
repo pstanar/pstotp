@@ -28,12 +28,6 @@ struct OtpauthUriTests {
         #expect(e.accountName == "octocat")
     }
 
-    @Test func queryIssuerOverridesLabelIssuer() throws {
-        let e = try OtpauthUri.parse("otpauth://totp/Old:alice?secret=JBSWY3DPEHPK3PXP&issuer=New")
-        #expect(e.issuer == "New")
-        #expect(e.accountName == "alice")
-    }
-
     @Test func decodesQueryPlusAsSpaceAndStripsSecretSpaces() throws {
         let e = try OtpauthUri.parse("otpauth://totp/alice?secret=JBSW%20Y3DP+EHPK3PXP&issuer=My+Corp")
         #expect(e.secret == "JBSWY3DPEHPK3PXP")
@@ -62,20 +56,46 @@ struct OtpauthUriTests {
         #expect(!uri.contains("issuer"))
     }
 
-    /// Known cross-client limitation, pinned for parity: Android, web and iOS all percent-decode the
-    /// label *before* splitting on the first ':', so a colon inside the account name is read as an
-    /// "Issuer:Account" separator and `build` → `parse` does not round-trip such names.
-    /// Change this deliberately, in all three clients at once.
-    @Test func colonInAccountNameIsSplitLikeAndroidAndWeb() throws {
-        let uri = OtpauthUri.build(VaultEntryPlaintext(issuer: "Corp", accountName: "bob: work", secret: "JBSW"))
-        let parsed = try OtpauthUri.parse(uri)
-        #expect(parsed.issuer == "Corp")          // query issuer wins
-        #expect(parsed.accountName == " work")    // label prefix "bob" is dropped
+    @Test func keepsColonInAccountNameWhenIssuerIsAQueryParam() throws {
+        let parsed = try OtpauthUri.parse(OtpauthUri.build(
+            VaultEntryPlaintext(issuer: "Corp", accountName: "bob: work", secret: "JBSW")))
+        #expect(parsed.issuer == "Corp")
+        #expect(parsed.accountName == "bob: work")
+    }
+
+    @Test(arguments: ["bob: work", "a:b:c", "https://example.com:8080", ":leading", "trailing:"])
+    func roundTripsAccountNamesContainingColons(account: String) throws {
+        let parsed = try OtpauthUri.parse(OtpauthUri.build(
+            VaultEntryPlaintext(issuer: "Corp", accountName: account, secret: "JBSW")))
+        #expect(parsed.issuer == "Corp")
+        #expect(parsed.accountName == account)
+    }
+
+    @Test(arguments: ["Corp:bob", "Corp%3Abob", "corp:bob", "Corp: bob"])
+    func stripsRedundantIssuerPrefix(label: String) throws {
+        let parsed = try OtpauthUri.parse("otpauth://totp/\(label)?secret=JBSW&issuer=Corp")
+        #expect(parsed.issuer == "Corp")
+        #expect(parsed.accountName == "bob")
+    }
+
+    @Test func keepsWholeLabelWhenPrefixIsNotTheIssuer() throws {
+        let parsed = try OtpauthUri.parse("otpauth://totp/Old:alice?secret=JBSW&issuer=New")
+        #expect(parsed.issuer == "New")
+        #expect(parsed.accountName == "Old:alice")
+    }
+
+    @Test func labelResolutionWithoutIssuerParam() {
+        #expect(OtpauthUri.resolveLabel("GitHub:octocat", queryIssuer: nil) == ("GitHub", "octocat"))
+        #expect(OtpauthUri.resolveLabel("GitHub: octocat:x", queryIssuer: nil) == ("GitHub", "octocat:x"))
+        #expect(OtpauthUri.resolveLabel("octocat", queryIssuer: nil) == ("", "octocat"))
+        // A blank issuer param counts as absent.
+        #expect(OtpauthUri.resolveLabel("GitHub:octocat", queryIssuer: "") == ("GitHub", "octocat"))
+        #expect(OtpauthUri.resolveLabel("GitHub:octocat", queryIssuer: "  ") == ("GitHub", "octocat"))
     }
 
     @Test(arguments: [
         VaultEntryPlaintext(issuer: "Example", accountName: "alice@example.com", secret: "JBSWY3DPEHPK3PXP"),
-        VaultEntryPlaintext(issuer: "Bank/Corp & Co", accountName: "bob work+test", secret: "NBSWY3DPFQQHO33SNRSCC",
+        VaultEntryPlaintext(issuer: "Bank/Corp & Co", accountName: "bob: work+test", secret: "NBSWY3DPFQQHO33SNRSCC",
                             algorithm: "SHA256", digits: 8, period: 60),
         VaultEntryPlaintext(issuer: "日本語 🔑", accountName: "ünïcode", secret: "JBSWY3DPEHPK3PXP"),
         VaultEntryPlaintext(issuer: "", accountName: "no-issuer", secret: "JBSWY3DPEHPK3PXP"),

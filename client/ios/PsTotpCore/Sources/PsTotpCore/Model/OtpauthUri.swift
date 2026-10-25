@@ -36,19 +36,7 @@ public enum OtpauthUri {
         let query = QueryParameters(components.percentEncodedQuery)
         guard let secret = query["secret"] else { throw OtpauthError.missingSecret }
 
-        // Label: "Issuer:Account" or just "Account"
-        let pathIssuer: String?
-        let accountName: String
-        if let colon = path.firstIndex(of: ":") {
-            pathIssuer = String(path[..<colon])
-            accountName = String(path[path.index(after: colon)...])
-        } else {
-            pathIssuer = nil
-            accountName = path
-        }
-
-        // Query-parameter issuer takes precedence over the label's issuer.
-        let issuer = query["issuer"] ?? pathIssuer ?? ""
+        let (issuer, accountName) = resolveLabel(path, queryIssuer: query["issuer"])
 
         let algorithm = query["algorithm"]?.uppercased() ?? "SHA1"
         guard ["SHA1", "SHA256", "SHA512"].contains(algorithm) else {
@@ -69,6 +57,31 @@ public enum OtpauthUri {
             digits: digits,
             period: period
         )
+    }
+
+    /// Split a decoded otpauth label into issuer and account name.
+    ///
+    /// - `issuer` query param present: it is the issuer, and the label is the account name —
+    ///   except a redundant `<issuer>:` prefix (case-insensitive), which is stripped. A colon that
+    ///   belongs to the account name itself ("bob: work") therefore survives.
+    /// - no `issuer` param: the first colon separates "Issuer:Account".
+    ///
+    /// Kept identical to the Android (`OtpauthUri.resolveLabel`) and web (`resolveOtpauthLabel`)
+    /// implementations.
+    static func resolveLabel(_ label: String, queryIssuer: String?) -> (issuer: String, accountName: String) {
+        let colon = label.firstIndex(of: ":")
+        let trim = { (s: Substring) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        if let queryIssuer, !queryIssuer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let colon,
+               trim(label[..<colon]).caseInsensitiveCompare(
+                   queryIssuer.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame {
+                return (queryIssuer, trim(label[label.index(after: colon)...]))
+            }
+            return (queryIssuer, label)
+        }
+        guard let colon else { return ("", label) }
+        return (trim(label[..<colon]), trim(label[label.index(after: colon)...]))
     }
 
     public static func build(_ entry: VaultEntryPlaintext) -> String {
