@@ -21,16 +21,8 @@ object OtpauthUri {
         val secret = uri.getQueryParameter("secret")
             ?: throw IllegalArgumentException("Missing secret parameter")
 
-        // Parse label: "Issuer:Account" or just "Account"
-        val (pathIssuer, accountName) = if (":" in path) {
-            val parts = path.split(":", limit = 2)
-            Uri.decode(parts[0]) to Uri.decode(parts[1])
-        } else {
-            null to Uri.decode(path)
-        }
-
-        // Query param issuer takes precedence over path issuer
-        val issuer = uri.getQueryParameter("issuer") ?: pathIssuer ?: ""
+        // `uri.path` is already percent-decoded, so the label must not be decoded again.
+        val (issuer, accountName) = resolveLabel(path, uri.getQueryParameter("issuer"))
 
         val algorithm = uri.getQueryParameter("algorithm")?.uppercase() ?: "SHA1"
         require(algorithm in listOf("SHA1", "SHA256", "SHA512")) { "Unsupported algorithm: $algorithm" }
@@ -49,6 +41,29 @@ object OtpauthUri {
             digits = digits,
             period = period,
         )
+    }
+
+    /**
+     * Split a decoded otpauth label into (issuer, accountName).
+     *
+     * - `issuer` query param present: it is the issuer, and the label is the account name — except
+     *   a redundant `<issuer>:` prefix (case-insensitive), which is stripped. A colon that belongs
+     *   to the account name itself ("bob: work") therefore survives.
+     * - no `issuer` param: the first colon separates "Issuer:Account".
+     *
+     * Kept identical to the web (`resolveOtpauthLabel`) and iOS implementations. Pure and free of
+     * android.net.Uri so it can be unit-tested on the JVM.
+     */
+    internal fun resolveLabel(label: String, queryIssuer: String?): Pair<String, String> {
+        val colon = label.indexOf(':')
+        if (!queryIssuer.isNullOrBlank()) {
+            if (colon >= 0 && label.substring(0, colon).trim().equals(queryIssuer.trim(), ignoreCase = true)) {
+                return queryIssuer to label.substring(colon + 1).trim()
+            }
+            return queryIssuer to label
+        }
+        if (colon < 0) return "" to label
+        return label.substring(0, colon).trim() to label.substring(colon + 1).trim()
     }
 
     /**

@@ -17,6 +17,31 @@ export function generateTotp(
 }
 
 /**
+ * Split a decoded otpauth label into issuer and account name.
+ *
+ * - `issuer` query param present: it is the issuer, and the label is the account name — except a
+ *   redundant `<issuer>:` prefix (case-insensitive), which is stripped. A colon that belongs to the
+ *   account name itself ("bob: work") therefore survives.
+ * - no `issuer` param: the first colon separates "Issuer:Account".
+ *
+ * Kept identical to the Android (`OtpauthUri.resolveLabel`) and iOS implementations.
+ */
+export function resolveOtpauthLabel(
+  label: string,
+  queryIssuer: string | null,
+): { issuer: string; accountName: string } {
+  const colon = label.indexOf(":");
+  if (queryIssuer !== null && queryIssuer.trim() !== "") {
+    if (colon !== -1 && label.slice(0, colon).trim().toLowerCase() === queryIssuer.trim().toLowerCase()) {
+      return { issuer: queryIssuer, accountName: label.slice(colon + 1).trim() };
+    }
+    return { issuer: queryIssuer, accountName: label };
+  }
+  if (colon === -1) return { issuer: "", accountName: label };
+  return { issuer: label.slice(0, colon).trim(), accountName: label.slice(colon + 1).trim() };
+}
+
+/**
  * Parse an otpauth:// URI into its components.
  */
 export function parseOtpauthUri(uri: string): {
@@ -44,17 +69,7 @@ export function parseOtpauthUri(uri: string): {
     throw new Error("Missing required parameter: secret");
   }
 
-  let issuer = params.get("issuer") ?? "";
-  let accountName = path;
-
-  // Handle "Issuer:Account" format in path
-  const colonIndex = path.indexOf(":");
-  if (colonIndex !== -1) {
-    if (!issuer) {
-      issuer = path.slice(0, colonIndex).trim();
-    }
-    accountName = path.slice(colonIndex + 1).trim();
-  }
+  const { issuer, accountName } = resolveOtpauthLabel(path, params.get("issuer"));
 
   const algorithm = (params.get("algorithm") ?? "SHA1").toUpperCase();
   const digits = parseInt(params.get("digits") ?? "6", 10);

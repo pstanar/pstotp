@@ -80,11 +80,10 @@ struct VaultExportTests {
     }
 
     @Test func otpauthExportRoundTrips() {
-        // Account names without ':' (see OtpauthUriTests for the cross-client colon limitation);
-        // icons are not part of the otpauth:// format.
+        // Icons are not part of the otpauth:// format.
         let simple = [
             VaultEntry(id: "1", issuer: "Example", accountName: "alice@example.com", secret: "JBSWY3DPEHPK3PXP"),
-            VaultEntry(id: "2", issuer: "Bank/Corp", accountName: "bob work", secret: "NBSWY3DPFQQHO33SNRSCC",
+            VaultEntry(id: "2", issuer: "Bank/Corp", accountName: "bob: work", secret: "NBSWY3DPFQQHO33SNRSCC",
                        algorithm: "SHA256", digits: 8, period: 60, icon: "🏦"),
         ]
         let text = VaultExport.exportOtpauthUris(entries: simple)
