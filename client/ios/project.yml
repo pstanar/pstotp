@@ -1,0 +1,78 @@
+name: PsTotp
+options:
+  bundleIdPrefix: io.github.pstanar
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    CLANG_ENABLE_MODULES: YES
+packages:
+  PsTotpCore:
+    path: PsTotpCore
+targets:
+  PsTotp:
+    type: application
+    platform: iOS
+    sources:
+      - path: PsTotp
+    dependencies:
+      - package: PsTotpCore
+    postBuildScripts:
+      - path: scripts/set-version.sh
+        name: Set version from git
+        basedOnDependencyAnalysis: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.pstanar.pstotp
+        PRODUCT_NAME: PsTotp
+        MARKETING_VERSION: "1.0.0"          # fallback only; scripts/set-version.sh overrides from git
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO   # set-version.sh runs git
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    info:
+      path: PsTotp/Info.plist
+      properties:
+        CFBundleDisplayName: PsTotp
+        PsTotpVersionLabel: $(MARKETING_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+  PsTotpTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PsTotpTests
+    dependencies:
+      - target: PsTotp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.pstanar.pstotp.tests
+        GENERATE_INFOPLIST_FILE: YES
+  PsTotpUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: PsTotpUITests
+    dependencies:
+      - target: PsTotp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.pstanar.pstotp.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  PsTotp:
+    build:
+      targets:
+        PsTotp: all
+    test:
+      targets:
+        - PsTotpTests
+        - PsTotpUITests

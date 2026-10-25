@@ -50,3 +50,5 @@ client/ios/**/.build/
 client/ios/**/.swiftpm/
 *.xcuserstate
 xcuserdata/
+client/ios/PsTotp.xcodeproj/
+client/ios/PsTotp/Info.plist
