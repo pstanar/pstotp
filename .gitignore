@@ -44,3 +44,9 @@ Desktop.ini
 /client/android/local.properties
 
 /publish/
+
+## Swift / Xcode
+client/ios/**/.build/
+client/ios/**/.swiftpm/
+*.xcuserstate
+xcuserdata/
