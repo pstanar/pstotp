@@ -53,8 +53,7 @@ public enum EntryValidation {
     /// id, order — is untouched.
     public static func edited(_ entry: VaultEntry, issuer: String, accountName: String) -> VaultEntry {
         var result = entry
-        let trimmedIssuer = issuer.trimmingCharacters(in: .whitespacesAndNewlines)
-        result.issuer = trimmedIssuer.isEmpty ? "Unknown" : trimmedIssuer
+        result.issuer = issuerOrUnknown(issuer)
         result.accountName = accountName.trimmingCharacters(in: .whitespacesAndNewlines)
         return result
     }
@@ -69,23 +68,27 @@ public enum EntryValidation {
         period: String,
         icon: String? = nil
     ) throws -> VaultEntryPlaintext {
+        // A missing secret is reported first, as the form reads top-down.
+        if normalizedSecret(secret).isEmpty { throw EntryValidationError.secretRequired }
         guard let d = Int(digits.trimmingCharacters(in: .whitespaces)), (4...10).contains(d) else {
-            // Validate the secret first when it is the thing that's missing, as the form reads top-down.
-            if normalizedSecret(secret).isEmpty { throw EntryValidationError.secretRequired }
             throw EntryValidationError.digitsOutOfRange
         }
         guard let p = Int(period.trimmingCharacters(in: .whitespaces)), p > 0 else {
-            if normalizedSecret(secret).isEmpty { throw EntryValidationError.secretRequired }
             throw EntryValidationError.periodInvalid
         }
-        let trimmedIssuer = issuer.trimmingCharacters(in: .whitespacesAndNewlines)
         return try validated(VaultEntryPlaintext(
-            issuer: trimmedIssuer.isEmpty ? "Unknown" : trimmedIssuer,
+            issuer: issuerOrUnknown(issuer),
             accountName: accountName.trimmingCharacters(in: .whitespacesAndNewlines),
             secret: secret,
             algorithm: algorithm,
             digits: d,
             period: p,
             icon: icon))
+    }
+
+    /// Trimmed, with a blank issuer becoming "Unknown" (as on Android).
+    private static func issuerOrUnknown(_ issuer: String) -> String {
+        let trimmed = issuer.trimmed
+        return trimmed.isEmpty ? "Unknown" : trimmed
     }
 }

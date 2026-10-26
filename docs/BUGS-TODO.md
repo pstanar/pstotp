@@ -13,6 +13,12 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   paths don't validate it either, so an entry with a bad secret can be saved and then crash the list on
   every render. Fix: validate Base32 at add/import time and make the card tolerate a failure.
   (iOS already does both: `EntryValidation`.)
+- [ ] **Imported entries aren't validated; `period: 0` likely crashes the list (Suspected)** — Aegis / 2FAS /
+  pstotp-plain / encrypted imports take `digits`, `period` and `algorithm` straight from the file.
+  `TotpGenerator.generate` does `timestampSeconds / period` (and `timeRemaining` does `now % period`), which
+  throws `ArithmeticException` for 0, on every render of that card. Fix: validate every imported entry like
+  a manual one. (iOS: `VaultExport` runs `EntryValidation.validated` on each entry, and the generator
+  throws instead of trapping.)
 - [ ] **`setupPassword` is not atomic** — `VaultRepository.setupPassword` writes salt, verifier, wrapped key
   and mode as four separate `settingsDao.set` calls. `isSetUp()` keys off the verifier, so a crash after
   the verifier but before the wrapped key leaves a vault that reports itself set up but can never unlock.
@@ -73,3 +79,5 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   Known remaining edge: an account containing `:` with an *empty* issuer is still split, because the URI has
   no `issuer` param to anchor on (fix by having the exporter always emit `issuer=` when the account
   contains a colon).
+  Behaviour change to be aware of: a label whose prefix is *not* the `issuer` param is now kept whole
+  (`otpauth://totp/Old:alice?issuer=New` → account `Old:alice`; previously `alice`).

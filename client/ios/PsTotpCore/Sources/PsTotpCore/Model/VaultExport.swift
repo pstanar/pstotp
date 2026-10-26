@@ -3,6 +3,9 @@ import Foundation
 
 /// Vault export/import in multiple formats. Matches the web client's import-export.tsx and the
 /// Android `VaultExport`.
+///
+/// `exportEncrypted` / `importEncrypted` run Argon2 (64 MB, ~100+ ms) synchronously: call them off
+/// the main actor, as `VaultRepository` does for setup and unlock.
 public enum VaultExport {
     public enum ImportResult: Equatable, Sendable {
         case success([VaultEntryPlaintext])

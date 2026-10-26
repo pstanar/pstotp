@@ -47,7 +47,7 @@ final class AppModel {
             layoutMode = LayoutMode.fromStorageKey(try await repository.getSetting(SettingsKeys.layoutMode))
             lockTimeout = LockTimeout.fromMillis(
                 try await repository.getSetting(SettingsKeys.lockTimeoutMs).flatMap { Int64($0) })
-            usage = Dictionary(uniqueKeysWithValues: try await repository.getAllUsage().map { ($0.entryId, $0) })
+            try await loadUsage()
             sortUsage = usage
             phase = setUp ? .locked : .needsSetup
         } catch {
@@ -188,10 +188,14 @@ final class AppModel {
     func recordUse(of entry: VaultEntry) async {
         do {
             try await repository.recordEntryUse(entryId: entry.id)
-            usage = Dictionary(uniqueKeysWithValues: try await repository.getAllUsage().map { ($0.entryId, $0) })
+            try await loadUsage()
         } catch {
             // Usage stats are best-effort; never interrupt the user over them.
         }
+    }
+
+    private func loadUsage() async throws {
+        usage = Dictionary(uniqueKeysWithValues: try await repository.getAllUsage().map { ($0.entryId, $0) })
     }
 
     /// Entries in display order for the current sort settings, optionally filtered.
@@ -206,7 +210,7 @@ final class AppModel {
     func setSortMode(_ mode: SortMode) {
         sortMode = mode
         sortUsage = usage
-        persist(SettingsKeys.sortMode, mode.storageKey)
+        persist(SettingsKeys.sortMode, mode.rawValue)
     }
 
     func setSortReversed(_ reversed: Bool) {
@@ -217,7 +221,7 @@ final class AppModel {
 
     func setLayoutMode(_ mode: LayoutMode) {
         layoutMode = mode
-        persist(SettingsKeys.layoutMode, mode.storageKey)
+        persist(SettingsKeys.layoutMode, mode.rawValue)
     }
 
     func setLockTimeout(_ timeout: LockTimeout) {

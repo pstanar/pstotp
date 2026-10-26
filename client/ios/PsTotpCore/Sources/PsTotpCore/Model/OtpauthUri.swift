@@ -70,18 +70,15 @@ public enum OtpauthUri {
     /// implementations.
     static func resolveLabel(_ label: String, queryIssuer: String?) -> (issuer: String, accountName: String) {
         let colon = label.firstIndex(of: ":")
-        let trim = { (s: Substring) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-        if let queryIssuer, !queryIssuer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            if let colon,
-               trim(label[..<colon]).caseInsensitiveCompare(
-                   queryIssuer.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame {
-                return (queryIssuer, trim(label[label.index(after: colon)...]))
+        if let queryIssuer, !queryIssuer.isBlank {
+            if let colon, label[..<colon].trimmed.caseInsensitiveCompare(queryIssuer.trimmed) == .orderedSame {
+                return (queryIssuer, label[label.index(after: colon)...].trimmed)
             }
             return (queryIssuer, label)
         }
         guard let colon else { return ("", label) }
-        return (trim(label[..<colon]), trim(label[label.index(after: colon)...]))
+        return (label[..<colon].trimmed, label[label.index(after: colon)...].trimmed)
     }
 
     public static func build(_ entry: VaultEntryPlaintext) -> String {
