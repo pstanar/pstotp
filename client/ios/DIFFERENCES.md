@@ -34,6 +34,8 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 19 | QR display | `AlertDialog`, ZXing at the default error-correction level. | Sheet with a "keep it private" note; CoreImage at level M with a 4-module quiet zone, rendered with whole pixels per module. | Native presentation; the extra note is because the code reveals the secret. | cosmetic | |
 | 20 | Photo picking | Photo picker via activity result. | System `PhotosPicker` (no photo-library permission needed); EXIF orientation honoured and huge photos bounded to 4096 px before decoding. | Platform picker; protects memory. | platform | |
 | 21 | Saving an unchanged edit | Always re-encrypts and updates the entry, marking it pending sync when connected. | Does nothing when the trimmed values equal the current ones. | Avoids a pointless write and sync. | internal | |
+| 22 | How reordering starts | Every card shows a drag handle in manual sort; drag immediately. | An explicit "Reorder Accounts" mode (sort menu, shown only for manual sort in the list with 2+ accounts); system drag handles, "Done" to leave. Cards don't copy or show their menu meanwhile. | A SwiftUI `List` only offers drag handles in edit mode; drag-anywhere would mean a hand-rolled gesture. | platform | |
+| 23 | Reordering while searching | Hidden entries are all moved to the end of the vault. | Visible entries are rearranged within the slots they occupy; hidden entries keep their slots. | The Android behaviour reshuffles entries the user can't see (see `docs/BUGS-TODO.md`). | behaviour (fixes an Android bug) | |
 
 ## Same result, but written explicitly (not differences)
 
@@ -47,6 +49,6 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 
 ## Not ported yet (pending, not differences)
 
-icon editing (the Edit screen keeps the current icon; changing it comes with the icon picker), drag-to-reorder, settings (lock timeout, layout,
+icon editing (the Edit screen keeps the current icon; changing it comes with the icon picker), settings (lock timeout, layout,
 import/export UI, change password), biometric unlock, icon picker / icon library, "next code" preview,
 connected mode (server sync, passkeys, devices, audit, recovery).

@@ -230,6 +230,62 @@ final class PsTotpUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["card.Changed"].exists)
     }
 
+    /// The visible top-to-bottom order of the given issuers' cards.
+    private func cardOrder(_ issuers: [String]) -> [String] {
+        issuers
+            .compactMap { name -> (String, CGFloat)? in
+                let card = app.descendants(matching: .any)["card.\(name)"]
+                return card.exists ? (name, card.frame.minY) : nil
+            }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+    }
+
+    func testReorderByDraggingPersistsAcrossLockAndUnlock() {
+        createVault()
+        let names = ["Alpha", "Bravo", "Charlie"]
+        for name in names { addManual(issuer: name, account: "me", secret: "JBSWY3DPEHPK3PXP") }
+        XCTAssertEqual(cardOrder(names), ["Alpha", "Bravo", "Charlie"])
+
+        app.buttons["vault.sort"].tap()
+        app.buttons["Reorder Accounts"].tap()
+        XCTAssertTrue(app.buttons["vault.done"].waitForExistence(timeout: 5))
+        // While reordering, rows don't copy and have no options menu.
+        XCTAssertFalse(app.buttons["More options for Alpha"].exists)
+
+        // Drag Alpha's handle down onto Charlie's: Alpha takes the last slot.
+        let alpha = app.buttons["Reorder Alpha"]
+        XCTAssertTrue(alpha.waitForExistence(timeout: 5))
+        alpha.press(forDuration: 0.6, thenDragTo: app.buttons["Reorder Charlie"])
+        app.buttons["vault.done"].tap()
+        XCTAssertTrue(app.buttons["vault.lock"].waitForExistence(timeout: 5))
+        XCTAssertEqual(cardOrder(names), ["Bravo", "Charlie", "Alpha"])
+
+        // The new order is stored, not just shown: it survives lock + unlock.
+        app.buttons["vault.lock"].tap()
+        type(password, into: "unlock.password")
+        app.buttons["unlock.submit"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.Alpha"].waitForExistence(timeout: 10))
+        XCTAssertEqual(cardOrder(names), ["Bravo", "Charlie", "Alpha"])
+    }
+
+    func testReorderIsOnlyOfferedInManualSortAndListLayout() {
+        createVault()
+        addManual(issuer: "Alpha", account: "me", secret: "JBSWY3DPEHPK3PXP")
+        app.buttons["vault.sort"].tap()
+        XCTAssertFalse(app.buttons["Reorder Accounts"].exists, "nothing to reorder with a single account")
+        app.tap()                                                  // tap outside to dismiss the menu
+
+        addManual(issuer: "Bravo", account: "me", secret: "JBSWY3DPEHPK3PXP")
+        app.buttons["vault.sort"].tap()
+        XCTAssertTrue(app.buttons["Reorder Accounts"].waitForExistence(timeout: 5))
+        app.buttons["Alphabetical"].tap()                          // choosing a sort mode closes the menu
+
+        app.buttons["vault.sort"].tap()
+        XCTAssertTrue(app.buttons["Alphabetical"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Reorder Accounts"].exists, "reordering is for the manual order only")
+    }
+
     func testScanTabExplainsAMissingCameraOnTheSimulator() throws {
         #if targetEnvironment(simulator)
         createVault()

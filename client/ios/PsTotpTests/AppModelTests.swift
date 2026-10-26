@@ -170,6 +170,82 @@ struct AppModelTests {
         #expect(model.entry(id: "nope") == nil)
     }
 
+    // MARK: Reordering
+
+    private func issuers(_ model: AppModel) -> [String] { model.entries.map(\.issuer) }
+
+    private func manualModel(_ names: [String]) async -> AppModel {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        for name in names { _ = await model.addEntry(plain(name)) }
+        return model
+    }
+
+    @Test func movingPersistsTheNewOrderAndRenumbersSortOrder() async {
+        let model = await manualModel(["A", "B", "C"])
+        let shown = model.displayEntries().map(\.id)
+        model.moveEntries(shownIds: shown, fromOffsets: [0], toOffset: 3)        // A to the end
+        #expect(issuers(model) == ["B", "C", "A"])
+        #expect(model.entries.map(\.sortOrder) == [0, 1, 2])
+        await model.waitForPendingWrites()
+
+        let relaunch = await started()
+        _ = await relaunch.unlock(password: strong)
+        #expect(issuers(relaunch) == ["B", "C", "A"])
+        #expect(relaunch.entries.map(\.sortOrder) == [0, 1, 2])
+    }
+
+    @Test func movingWhileSearchingKeepsHiddenEntriesInPlace() async {
+        let model = await manualModel(["red", "green", "blue", "grey"])
+        let shown = model.displayEntries(query: "gre").map(\.id)               // green, grey
+        #expect(shown.count == 2)
+        model.moveEntries(shownIds: shown, fromOffsets: [1], toOffset: 0)        // grey above green
+        #expect(issuers(model) == ["red", "grey", "blue", "green"])              // red and blue did not move
+        await model.waitForPendingWrites()
+
+        let relaunch = await started()
+        _ = await relaunch.unlock(password: strong)
+        #expect(issuers(relaunch) == ["red", "grey", "blue", "green"])
+    }
+
+    @Test func reorderingIsIgnoredOutsideManualSort() async {
+        let model = await manualModel(["B", "A"])
+        model.setSortMode(.alphabetical)
+        model.moveEntries(shownIds: model.displayEntries().map(\.id), fromOffsets: [0], toOffset: 2)
+        #expect(issuers(model) == ["B", "A"])                                    // stored (manual) order untouched
+    }
+
+    @Test func aMoveThatChangesNothingWritesNothingAndKeepsTheList() async {
+        let model = await manualModel(["A", "B", "C"])
+        let shown = model.displayEntries().map(\.id)
+        model.moveEntries(shownIds: shown, fromOffsets: [1], toOffset: 1)
+        model.moveEntries(shownIds: shown, fromOffsets: [1], toOffset: 2)
+        #expect(issuers(model) == ["A", "B", "C"])
+    }
+
+    @Test func quickSuccessiveMovesLandInTheOrderTheyWereMade() async {
+        let model = await manualModel(["A", "B", "C", "D"])
+        for _ in 0..<3 {   // A to the end, three times over: A,B,C,D → B,C,D,A → C,D,A,B → D,A,B,C
+            model.moveEntries(shownIds: model.displayEntries().map(\.id), fromOffsets: [0], toOffset: 4)
+        }
+        #expect(issuers(model) == ["D", "A", "B", "C"])
+        await model.waitForPendingWrites()
+        let relaunch = await started()
+        _ = await relaunch.unlock(password: strong)
+        #expect(issuers(relaunch) == ["D", "A", "B", "C"])
+    }
+
+    @Test func newEntriesAreAppendedAfterAReorder() async {
+        let model = await manualModel(["A", "B"])
+        model.moveEntries(shownIds: model.displayEntries().map(\.id), fromOffsets: [1], toOffset: 0)   // B, A
+        await model.waitForPendingWrites()
+        _ = await model.addEntry(plain("C"))
+        #expect(issuers(model) == ["B", "A", "C"])
+        let relaunch = await started()
+        _ = await relaunch.unlock(password: strong)
+        #expect(issuers(relaunch) == ["B", "A", "C"])
+    }
+
     // MARK: Listing
 
     @Test func searchAndSortApplyToTheDisplayList() async {

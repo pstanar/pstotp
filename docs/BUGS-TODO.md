@@ -30,6 +30,12 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
 - [ ] **Test gap: `OtpauthUri.parse` has no tests** — it depends on `android.net.Uri`, so it can't run as a pure-JVM
   test. Only `resolveLabel` is covered (`OtpauthUriLabelTest`), and that test was **never run** (no JDK on the
   machine it was written on) — run `./gradlew :core:test`.
+- [ ] **Reordering while a search is active pushes hidden entries to the end (Suspected)** — `VaultScreen` hands
+  `reorderEntries` only the *filtered* ids, and `VaultViewModel.reorderEntries` sorts the full list with
+  `positionMap[it.id] ?: Int.MAX_VALUE`, so every entry the filter hid is moved after the visible ones (the
+  comment says it avoids "dropping" hidden entries, but it relocates them). Fix: write the visible ids back
+  into the slots the visible entries occupied (iOS: `EntryListing.reordered`). Also: `moveEntry(id, direction)`
+  in the ViewModel is not called from anywhere (dead code, or a missing accessibility alternative to dragging).
 - [ ] **QR scanner stops for good after one rejected code (Suspected)** — `QrScanner.kt` sets `detected` with
   `compareAndSet(false, true)` before calling `onResult`, and never resets it. If the code is then rejected
   (an HOTP `otpauth://hotp/…`, a bad secret, an unsupported algorithm) the error is shown but the analyzer

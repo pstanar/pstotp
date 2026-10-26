@@ -30,7 +30,7 @@ final class AppModel {
     private var sortUsage: [String: EntryUsageRecord] = [:]
     private var backgroundedAt: Date?
     private var toastTask: Task<Void, Never>?
-    private var persistTask: Task<Void, Never>?
+    private var writeQueue: Task<Void, Never>?
 
     init(repository: VaultRepository) {
         self.repository = repository
@@ -149,6 +149,31 @@ final class AppModel {
 
     func entry(id: String) -> VaultEntry? { entries.first { $0.id == id } }
 
+    /// Apply a drag in the list. `shownIds` is the list as displayed (possibly search-filtered);
+    /// hidden entries keep their slots. Only meaningful in manual sort — the user's own order.
+    /// The list updates at once; the database write is queued and the list is reloaded if it fails.
+    func moveEntries(shownIds: [String], fromOffsets: IndexSet, toOffset: Int) {
+        guard sortMode == .manual else { return }
+        let newVisible = EntryListing.moved(shownIds, fromOffsets: fromOffsets, toOffset: toOffset)
+        let order = EntryListing.reordered(all: entries.map(\.id), visibleNewOrder: newVisible)
+        guard order != entries.map(\.id) else { return }
+
+        let position = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        entries.sort { position[$0.id, default: .max] < position[$1.id, default: .max] }
+        for index in entries.indices { entries[index].sortOrder = index }
+
+        enqueue { [self] in
+            do {
+                try await repository.reorderEntries(orderedIds: order)
+            } catch {
+                // The database didn't take the new order: show what is actually stored.
+                if let key = vaultKey, let reloaded = try? await repository.getAllEntries(vaultKey: key) {
+                    entries = reloaded
+                }
+            }
+        }
+    }
+
     func deleteEntry(id: String) async {
         do {
             try await repository.deleteEntry(id: id)
@@ -200,17 +225,22 @@ final class AppModel {
         persist(SettingsKeys.lockTimeoutMs, String(timeout.millis))
     }
 
-    /// Settings writes are fire-and-forget from the UI, but chained so they land in order.
-    private func persist(_ key: String, _ value: String) {
-        let previous = persistTask
-        persistTask = Task {
+    /// Writes that the UI fires and forgets (settings, reordering) run strictly in the order they
+    /// were issued, so two quick changes can't land swapped.
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) {
+        let previous = writeQueue
+        writeQueue = Task {
             await previous?.value
-            try? await repository.setSetting(key, value)
+            await work()
         }
     }
 
-    /// Waits for queued settings writes (tests, and anything that must read them back).
-    func waitForPendingWrites() async { await persistTask?.value }
+    private func persist(_ key: String, _ value: String) {
+        enqueue { [repository] in try? await repository.setSetting(key, value) }
+    }
+
+    /// Waits for queued writes (tests, and anything that must read them back).
+    func waitForPendingWrites() async { await writeQueue?.value }
 
     // MARK: Lifecycle
 
