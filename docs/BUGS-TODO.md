@@ -68,6 +68,15 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   Fails with and without unrelated changes. Fix the vitest environment / storage stub.
 - [ ] **Blank-vs-missing issuer differs from Android (resolved by the label fix, keep in mind)** — web already
   treated `issuer=` as absent; Android used the empty string. Both now follow `resolveLabel`.
+- [ ] **8 open Dependabot alerts on `main` (Verified, 2026-10-25)** — all in `client/web/package-lock.json`, all
+  dev/build-time packages (dev server, test runner, browser-target data), none in the shipped bundle's runtime.
+  Fix: bump to the patched versions below, re-run `npm test` and the build, and let Dependabot close the alerts.
+  - High: `vite` → 8.1.6 (#36, GHSA-587h-7wmj-h5pm, launch-editor existence-check bypass on Windows);
+    `source-map-js` → 1.2.2 (#34, GHSA-68fv-2mgg-jv7q, event-loop DoS); `browserslist` → 4.28.7
+    (#29, GHSA-73wf-gq98-2v4g, crash / prototype write via custom stats file)
+  - Moderate: `vite` → 8.1.6 (#37, GHSA-r825-w8mm-5pxw; #35, GHSA-698v-4r3x-3vcv, both launch-editor);
+    `vitest` and `@vitest/mocker` → 4.1.11 (#31, #30, GHSA-82fw-gwwq-j7x9, file read via redirect mock);
+    `baseline-browser-mapping` → 2.11.0 (#32, GHSA-w5vr-8v7q-w6rv, DoS on invalid input)
 
 ### Server
 
