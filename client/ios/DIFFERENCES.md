@@ -46,6 +46,6 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 
 ## Not ported yet (pending, not differences)
 
-grid layout, edit screen, drag-to-reorder, settings (lock timeout, layout,
+edit screen (and its menu item on cards/tiles), drag-to-reorder, settings (lock timeout, layout,
 import/export UI, change password), biometric unlock, icon picker / icon library, "next code" preview,
 connected mode (server sync, passkeys, devices, audit, recovery).

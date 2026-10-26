@@ -36,7 +36,7 @@ struct TotpCard: View {
                     }
                     HStack(spacing: 12) {
                         if let code {
-                            Text(Self.grouped(code))
+                            Text(CodeFormat.grouped(code))
                                 .font(.system(size: 28, weight: .bold, design: .monospaced))
                                 .tracking(2)
                                 .accessibilityIdentifier("code")
@@ -77,11 +77,5 @@ struct TotpCard: View {
             .accessibilityAction(named: "Copy code") { if let code { onCopyCode(code) } }
         }
         .accessibilityIdentifier("card.\(entry.issuer)")
-    }
-
-    /// "123456" → "123 456" (first half gets the extra digit for odd lengths).
-    static func grouped(_ code: String) -> String {
-        let mid = (code.count + 1) / 2
-        return "\(code.prefix(mid)) \(code.dropFirst(mid))"
     }
 }

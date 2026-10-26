@@ -13,6 +13,8 @@ struct VaultView: View {
             Group {
                 if model.entries.isEmpty {
                     EmptyVaultView()
+                } else if model.layoutMode == .grid {
+                    grid
                 } else {
                     list
                 }
@@ -25,6 +27,7 @@ struct VaultView: View {
                         .accessibilityIdentifier("vault.lock")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    layoutToggle
                     sortMenu
                     Button("Add account", systemImage: "plus") { showingAdd = true }
                         .accessibilityIdentifier("vault.add")
@@ -71,6 +74,29 @@ struct VaultView: View {
             if shown.isEmpty { ContentUnavailableView.search(text: query) }
         }
         .accessibilityIdentifier("vault.list")
+    }
+
+    private var grid: some View {
+        let shown = model.displayEntries(query: query)
+        return VaultGridView(
+            model: model,
+            entries: shown,
+            onShowQR: { qrEntry = $0 },
+            onDelete: { pendingDeletion = $0 }
+        )
+        .searchable(text: $query, prompt: "Search accounts")
+        .overlay {
+            if shown.isEmpty { ContentUnavailableView.search(text: query) }
+        }
+    }
+
+    private var layoutToggle: some View {
+        let isList = model.layoutMode == .list
+        return Button(isList ? "Grid view" : "List view",
+                      systemImage: isList ? "square.grid.2x2" : "list.bullet") {
+            model.setLayoutMode(isList ? .grid : .list)
+        }
+        .accessibilityIdentifier("vault.layout")
     }
 
     private var sortMenu: some View {

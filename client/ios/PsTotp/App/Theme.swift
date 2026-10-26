@@ -5,6 +5,8 @@ import UIKit
 /// primary on warm cream (light) or warm charcoal (dark) surfaces.
 enum Palette {
     static let primary = dynamic(light: 0x8B4513, dark: 0xE8953C)
+    /// Highlight for the selected grid tile.
+    static let primaryContainer = dynamic(light: 0xFFDCC2, dark: 0x6A3400)
     static let background = dynamic(light: 0xFCF5EE, dark: 0x2A231E)
     static let onBackground = dynamic(light: 0x4A3728, dark: 0xF5F0EB)
     static let surface = dynamic(light: 0xF5EDE5, dark: 0x352B24)
