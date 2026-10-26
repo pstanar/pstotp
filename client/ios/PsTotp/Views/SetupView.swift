@@ -11,15 +11,7 @@ struct SetupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ClockLogo(size: 96)
-            Text("PsTotp")
-                .font(.largeTitle.weight(.semibold))
-                .padding(.top, 8)
-            Text("Create a password to protect your vault")
-                .font(.subheadline)
-                .foregroundStyle(Palette.onSurfaceVariant)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
+            AuthHeader(subtitle: "Create a password to protect your vault")
 
             VStack(spacing: 12) {
                 PasswordField(title: "Password", text: $password, submitLabel: .next) { focus = .confirm }
@@ -32,26 +24,13 @@ struct SetupView: View {
             .disabled(loading)
 
             if let error = model.errorMessage {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(Palette.error)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 8)
+                AuthError(message: error)
                     .accessibilityIdentifier("setup.error")
             }
 
-            Button(action: submit) {
-                HStack(spacing: 8) {
-                    if loading { ProgressView().tint(.white) }
-                    Text(loading ? "Creating vault…" : "Create Vault")
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(loading || password.isEmpty)
-            .padding(.top, 24)
-            .accessibilityIdentifier("setup.create")
+            AuthSubmitButton(title: "Create Vault", busyTitle: "Creating vault…", loading: loading, action: submit)
+                .disabled(loading || password.isEmpty)
+                .accessibilityIdentifier("setup.create")
         }
         .padding(24)
         .frame(maxHeight: .infinity)

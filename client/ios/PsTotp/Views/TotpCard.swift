@@ -17,9 +17,7 @@ struct TotpCard: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = Int64(context.date.timeIntervalSince1970)
-            let code = try? TotpGenerator.generate(
-                secret: entry.secret, algorithm: entry.algorithm, digits: entry.digits,
-                period: entry.period, timestampSeconds: now)
+            let code = entry.code(at: now)
             let timeLeft = TotpGenerator.timeRemaining(period: entry.period, now: now)
 
             HStack(spacing: 12) {
@@ -39,17 +37,8 @@ struct TotpCard: View {
                             .lineLimit(1)
                     }
                     HStack(spacing: 12) {
-                        if let code {
-                            Text(CodeFormat.grouped(code))
-                                .font(.system(size: 28, weight: .bold, design: .monospaced))
-                                .tracking(2)
-                                .accessibilityIdentifier("code")
-                                .accessibilityLabel("Code \(code.map(String.init).joined(separator: " "))")
-                        } else {
-                            Label("Invalid secret", systemImage: "exclamationmark.triangle")
-                                .font(.subheadline)
-                                .foregroundStyle(Palette.error)
-                        }
+                        CodeText(code: code, size: 28)
+                            .accessibilityIdentifier("code")
                         if code != nil, timeLeft <= 10 {
                             Text("\(timeLeft)s")
                                 .font(.footnote)
@@ -77,10 +66,7 @@ struct TotpCard: View {
 
     private var optionsMenu: some View {
         Menu {
-            Button("Copy Secret Key", systemImage: "key", action: onCopySecret)
-            Button("Show QR Code", systemImage: "qrcode", action: onShowQR)
-            Button("Edit", systemImage: "pencil", action: onEdit)
-            Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            EntryActions(onCopySecret: onCopySecret, onShowQR: onShowQR, onEdit: onEdit, onDelete: onDelete)
         } label: {
             Image(systemName: "ellipsis")
                 .frame(width: 32, height: 44)

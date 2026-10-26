@@ -103,9 +103,9 @@ final class AppModel {
     }
 
     func lock() {
-        if var key = vaultKey {
-            key.resetBytes(in: 0..<key.count)   // best effort: Data may have been copied
-        }
+        // Zero the stored buffer in place. (Zeroing a `var` copy would only zero a copy-on-write
+        // duplicate.) Best effort: a copy held by an in-flight repository call survives.
+        if let count = vaultKey?.count { vaultKey?.resetBytes(in: 0..<count) }
         vaultKey = nil
         entries = []
         errorMessage = nil

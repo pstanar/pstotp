@@ -4,8 +4,6 @@ import Foundation
 /// Vault export/import in multiple formats. Matches the web client's import-export.tsx and the
 /// Android `VaultExport`.
 public enum VaultExport {
-    private static let envelopeContext = "vault-password-envelope-v1"
-
     public enum ImportResult: Equatable, Sendable {
         case success([VaultEntryPlaintext])
         case needsPassword
@@ -24,8 +22,7 @@ public enum VaultExport {
         let plain = try JSONSerialization.data(withJSONObject: entriesToJson(entries), options: [.withoutEscapingSlashes])
 
         let salt = KeyDerivation.generateSalt()
-        let authKey = try Argon2.hash(password: password, salt: salt)
-        let encKey = Hkdf.derive(ikm: authKey, info: envelopeContext)
+        let encKey = try exportKey(password: password, salt: salt)
         let encrypted = try AesGcm.encrypt(key: encKey, plaintext: plain)
 
         let nonce = encrypted.prefix(AesGcm.nonceSize)
@@ -128,8 +125,7 @@ public enum VaultExport {
               let nonceB64 = json["nonce"] as? String, let nonce = Data(base64Encoded: nonceB64)
         else { throw ExportError.malformedEncryptedExport }
 
-        let authKey = try Argon2.hash(password: password, salt: salt)
-        let encKey = Hkdf.derive(ikm: authKey, info: envelopeContext)
+        let encKey = try exportKey(password: password, salt: salt)
 
         let plain: Data
         do { plain = try AesGcm.decrypt(key: encKey, payload: nonce + ciphertext) }
@@ -139,6 +135,12 @@ public enum VaultExport {
             throw ExportError.malformedEncryptedExport
         }
         return try jsonArrayToPlaintexts(array).map(EntryValidation.validated)
+    }
+
+    /// The same derivation as the vault's password envelope (Argon2id → HKDF), as on web/Android.
+    private static func exportKey(password: String, salt: Data) throws -> Data {
+        KeyDerivation.deriveEnvelopeKey(
+            authKey: try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt))
     }
 
     // MARK: JSON shape
