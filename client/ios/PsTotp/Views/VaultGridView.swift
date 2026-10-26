@@ -6,6 +6,7 @@ struct VaultGridView: View {
     let model: AppModel
     let entries: [VaultEntry]
     let onShowQR: (VaultEntry) -> Void
+    let onEdit: (VaultEntry) -> Void
     let onDelete: (VaultEntry) -> Void
 
     @State private var selectedId: String?
@@ -30,6 +31,7 @@ struct VaultGridView: View {
                             onSelect: { selectedId = entry.id },
                             onCopySecret: { model.copySecret(of: entry) },
                             onShowQR: { onShowQR(entry) },
+                            onEdit: { onEdit(entry) },
                             onDelete: { onDelete(entry) })
                     }
                 }

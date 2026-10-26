@@ -131,6 +131,24 @@ final class AppModel {
         }
     }
 
+    /// Rename an entry (service name and account). Secret, algorithm, icon and order are untouched.
+    /// An edit that changes nothing is not written, so it doesn't queue a pointless sync.
+    /// - Returns: nil on success, otherwise a message for the user.
+    func updateEntry(_ entry: VaultEntry, issuer: String, accountName: String) async -> String? {
+        guard let key = vaultKey else { return "Vault is locked" }
+        let edited = EntryValidation.edited(entry, issuer: issuer, accountName: accountName)
+        guard edited != entry else { return nil }
+        do {
+            try await repository.updateEntry(vaultKey: key, entry: edited)
+            if let index = entries.firstIndex(where: { $0.id == entry.id }) { entries[index] = edited }
+            return nil
+        } catch {
+            return "Failed to update entry: \(error.localizedDescription)"
+        }
+    }
+
+    func entry(id: String) -> VaultEntry? { entries.first { $0.id == id } }
+
     func deleteEntry(id: String) async {
         do {
             try await repository.deleteEntry(id: id)

@@ -67,6 +67,13 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["vault.layout"].tap()
 
         app.buttons["More options for GitHub"].tap()
+        try shot(app, "\(style)-4d-card-menu")
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(app.navigationBars["Edit Account"].waitForExistence(timeout: 5))
+        try shot(app, "\(style)-4e-edit")
+        app.buttons["Cancel"].tap()
+
+        app.buttons["More options for GitHub"].tap()
         app.buttons["Show QR Code"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["qr.image"].waitForExistence(timeout: 5))
         try shot(app, "\(style)-5-qr")

@@ -183,6 +183,53 @@ final class PsTotpUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["grid.issuer"].label, "Google")
     }
 
+    /// Replaces the text of a text field: taps at the far right so the cursor lands at the end,
+    /// deletes what is there, then types.
+    private func replaceText(in id: String, with text: String) {
+        let field = app.textFields[id]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "\(id) missing")
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
+        field.clearText()
+        field.typeText(text)
+    }
+
+    func testEditRenamesFromTheListAndTheGrid() {
+        createVault()
+        addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")
+
+        // List: card menu → Edit.
+        app.buttons["More options for GitHub"].tap()
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(app.navigationBars["Edit Account"].waitForExistence(timeout: 5))
+        replaceText(in: "edit.issuer", with: "GitHub Enterprise")
+        replaceText(in: "edit.account", with: "work")
+        app.buttons["edit.save"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.GitHub Enterprise"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["card.GitHub"].exists)
+        XCTAssertTrue(app.staticTexts["work"].exists)
+
+        // Grid: tile menu → Edit.
+        app.buttons["vault.layout"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["tile.GitHub Enterprise"].waitForExistence(timeout: 5))
+        app.buttons["More options for GitHub Enterprise"].tap()
+        app.buttons["Edit"].tap()
+        replaceText(in: "edit.issuer", with: "GHE")
+        app.buttons["edit.save"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["tile.GHE"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["grid.issuer"].label, "GHE")
+    }
+
+    func testEditCancelLeavesTheEntryUnchanged() {
+        createVault()
+        addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")
+        app.buttons["More options for GitHub"].tap()
+        app.buttons["Edit"].tap()
+        replaceText(in: "edit.issuer", with: "Changed")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.GitHub"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["card.Changed"].exists)
+    }
+
     func testScanTabExplainsAMissingCameraOnTheSimulator() throws {
         #if targetEnvironment(simulator)
         createVault()
