@@ -49,6 +49,13 @@ public enum EntryListing {
         }
     }
 
+    /// The grid view's selected entry after the visible list changes: keep the current selection if it
+    /// is still shown, otherwise fall back to the first visible entry (nil when nothing is shown).
+    public static func selection(current: String?, in visibleIds: [String]) -> String? {
+        if let current, visibleIds.contains(current) { return current }
+        return visibleIds.first
+    }
+
     /// `areInOrder` returns true/false when the pair is ordered, nil when they tie.
     private static func stableSorted(
         _ entries: [VaultEntry], by areInOrder: (VaultEntry, VaultEntry) -> Bool?

@@ -135,6 +135,34 @@ struct AppLogicTests {
     }
 }
 
+@Suite("Grid selection and code formatting")
+struct GridSupportTests {
+    @Test func selectionKeepsAVisibleEntryAndFallsBackToTheFirst() {
+        #expect(EntryListing.selection(current: "b", in: ["a", "b", "c"]) == "b")
+        #expect(EntryListing.selection(current: "z", in: ["a", "b", "c"]) == "a")     // filtered out → first
+        #expect(EntryListing.selection(current: nil, in: ["a", "b"]) == "a")
+        #expect(EntryListing.selection(current: "a", in: []) == nil)
+        #expect(EntryListing.selection(current: nil, in: []) == nil)
+    }
+
+    @Test func codesGroupIntoTwoHalves() {
+        #expect(CodeFormat.grouped("123456") == "123 456")
+        #expect(CodeFormat.grouped("12345678") == "1234 5678")
+        #expect(CodeFormat.grouped("1234567") == "1234 567")
+        #expect(CodeFormat.grouped("12345") == "123 45")
+        #expect(CodeFormat.grouped("1") == "1 ")
+        #expect(CodeFormat.grouped("") == "")
+    }
+
+    @Test func layoutModeStorageKeysAndLabels() {
+        #expect(LayoutMode.fromStorageKey("grid") == .grid)
+        #expect(LayoutMode.fromStorageKey("list") == .list)
+        #expect(LayoutMode.fromStorageKey("nonsense") == .list)
+        #expect(LayoutMode.fromStorageKey(nil) == .list)
+        #expect(LayoutMode.grid.storageKey == "grid" && LayoutMode.list.storageKey == "list")
+    }
+}
+
 @Suite("PasswordPolicy")
 struct PasswordPolicyTests {
     @Test func reportsTheFirstViolatedRule() {
