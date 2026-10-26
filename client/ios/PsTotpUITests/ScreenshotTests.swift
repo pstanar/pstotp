@@ -2,11 +2,12 @@ import XCTest
 
 /// Writes screenshots to a host directory for visual review. Skipped unless run with
 /// `TEST_RUNNER_PSTOTP_SHOTS=<directory>`, so it never affects normal test runs.
+@MainActor
 final class ScreenshotTests: XCTestCase {
     private var directory: String?
     private let password = "Str0ng!Passw0rd"
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
         directory = ProcessInfo.processInfo.environment["PSTOTP_SHOTS"]
         try XCTSkipIf(directory == nil, "set TEST_RUNNER_PSTOTP_SHOTS to capture screenshots")
@@ -36,12 +37,19 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["vault.empty"].waitForExistence(timeout: 10))
         try shot(app, "\(style)-2-empty")
 
+        app.buttons["vault.add"].tap()
+        try shot(app, "\(style)-2b-add-scan")
+        app.segmentedControls.buttons["Image"].tap()
+        try shot(app, "\(style)-2c-add-image")
+        app.buttons["Cancel"].tap()
+
         for (issuer, account, secret) in [
             ("GitHub", "octocat", "JBSWY3DPEHPK3PXP"),
             ("Google", "alice@example.com", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"),
             ("Acme Bank", "alice", "NBSWY3DPFQQHO33SNRSCC"),
         ] {
             app.buttons["vault.add"].tap()
+            app.segmentedControls.buttons["Manual"].tap()
             type(app, issuer, into: "add.issuer")
             type(app, account, into: "add.account")
             type(app, secret, into: "add.secret")
@@ -51,8 +59,10 @@ final class ScreenshotTests: XCTestCase {
         }
         try shot(app, "\(style)-4-vault")
 
-        app.buttons["vault.sort"].tap()
-        try shot(app, "\(style)-5-sort-menu")
+        app.buttons["More options for GitHub"].tap()
+        app.buttons["Show QR Code"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["qr.image"].waitForExistence(timeout: 5))
+        try shot(app, "\(style)-5-qr")
     }
 
     func testLight() throws { try run(style: "light") }
