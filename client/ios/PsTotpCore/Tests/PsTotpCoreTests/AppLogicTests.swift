@@ -118,6 +118,22 @@ struct AppLogicTests {
         }
     }
 
+    @Test func editTrimsDefaultsBlankIssuerAndKeepsEverythingElse() {
+        let original = VaultEntry(id: "id-1", issuer: "Old", accountName: "old@x.io", secret: "JBSWY3DPEHPK3PXP",
+                                  algorithm: "SHA256", digits: 8, period: 60, icon: "🔑", version: 3, sortOrder: 7)
+        let edited = EntryValidation.edited(original, issuer: "  New Name \n", accountName: "  new@x.io ")
+        #expect(edited.issuer == "New Name")
+        #expect(edited.accountName == "new@x.io")
+        var expected = original
+        expected.issuer = "New Name"
+        expected.accountName = "new@x.io"
+        #expect(edited == expected)                       // id, secret, algorithm, digits, period, icon, order intact
+
+        #expect(EntryValidation.edited(original, issuer: "   ", accountName: "x").issuer == "Unknown")
+        #expect(EntryValidation.edited(original, issuer: "I", accountName: "   ").accountName == "")
+        #expect(EntryValidation.edited(original, issuer: "Old", accountName: "old@x.io") == original)   // no-op edit
+    }
+
     @Test func validatedChecksParsedUriEntries() throws {
         let ok = try EntryValidation.validated(try OtpauthUri.parse("otpauth://totp/a?secret=jbsw%20y3dp"))
         #expect(ok.secret == "JBSWY3DP")

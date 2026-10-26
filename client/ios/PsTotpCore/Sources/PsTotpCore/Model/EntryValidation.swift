@@ -41,6 +41,17 @@ public enum EntryValidation {
         return result
     }
 
+    /// An entry after the Edit screen: issuer and account are trimmed, a blank issuer becomes
+    /// "Unknown" (as on Android), and everything else — secret, algorithm, digits, period, icon,
+    /// id, order — is untouched.
+    public static func edited(_ entry: VaultEntry, issuer: String, accountName: String) -> VaultEntry {
+        var result = entry
+        let trimmedIssuer = issuer.trimmingCharacters(in: .whitespacesAndNewlines)
+        result.issuer = trimmedIssuer.isEmpty ? "Unknown" : trimmedIssuer
+        result.accountName = accountName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result
+    }
+
     /// Build an entry from the manual-entry form fields (digits/period arrive as typed text).
     public static func manualEntry(
         issuer: String,
