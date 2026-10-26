@@ -150,6 +150,17 @@ struct AppLogicTests {
         #expect(try EntryValidation.validated(lower).algorithm == "SHA256")
     }
 
+    @Test func entryCodeIsTheGeneratorsCodeOrNil() throws {
+        let entry = VaultEntry(id: "1", issuer: "I", accountName: "A", secret: "JBSWY3DPEHPK3PXP", digits: 8)
+        #expect(entry.code(at: 59) == (try TotpGenerator.generate(secret: entry.secret, digits: 8, timestampSeconds: 59)))
+        var broken = entry
+        broken.period = 0
+        #expect(broken.code(at: 59) == nil)
+        broken = entry
+        broken.secret = "!!"
+        #expect(broken.code(at: 59) == nil)
+    }
+
     @Test func everyValidatedSecretProducesATotpCode() throws {
         let e = try EntryValidation.manualEntry(issuer: "I", accountName: "A", secret: "jbswy3dpehpk3pxp",
                                                 algorithm: "SHA1", digits: "6", period: "30")

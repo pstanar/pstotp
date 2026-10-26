@@ -53,10 +53,7 @@ struct TotpGridTile: View {
         .accessibilityIdentifier("tile.\(entry.issuer)")
     }
 
-    @ViewBuilder private var actions: some View {
-        Button("Copy Secret Key", systemImage: "key", action: onCopySecret)
-        Button("Show QR Code", systemImage: "qrcode", action: onShowQR)
-        Button("Edit", systemImage: "pencil", action: onEdit)
-        Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+    private var actions: some View {
+        EntryActions(onCopySecret: onCopySecret, onShowQR: onShowQR, onEdit: onEdit, onDelete: onDelete)
     }
 }

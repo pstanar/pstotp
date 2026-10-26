@@ -11,9 +11,7 @@ struct TotpGridDetail: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = Int64(context.date.timeIntervalSince1970)
-            let code = try? TotpGenerator.generate(
-                secret: entry.secret, algorithm: entry.algorithm, digits: entry.digits,
-                period: entry.period, timestampSeconds: now)
+            let code = entry.code(at: now)
             let timeLeft = TotpGenerator.timeRemaining(period: entry.period, now: now)
 
             VStack(spacing: 0) {
@@ -33,20 +31,10 @@ struct TotpGridDetail: View {
                         .lineLimit(1)
                 }
 
-                Group {
-                    if let code {
-                        Text(CodeFormat.grouped(code))
-                            .font(.system(size: 44, weight: .bold, design: .monospaced))
-                            .tracking(2)
-                            .contentTransition(.opacity)
-                            .accessibilityIdentifier("grid.code")
-                            .accessibilityLabel("Code \(code.map(String.init).joined(separator: " "))")
-                    } else {
-                        Label("Invalid secret", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(Palette.error)
-                    }
-                }
-                .padding(.top, 16)
+                CodeText(code: code, size: 44)
+                    .contentTransition(.opacity)
+                    .accessibilityIdentifier("grid.code")
+                    .padding(.top, 16)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
 

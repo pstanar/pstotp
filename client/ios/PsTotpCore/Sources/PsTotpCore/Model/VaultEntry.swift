@@ -45,6 +45,14 @@ public struct VaultEntry: Equatable, Hashable, Identifiable, Sendable {
             version: version, sortOrder: sortOrder)
     }
 
+    /// The TOTP code at `timestampSeconds`, or nil when the entry can't produce one (bad secret or
+    /// parameters).
+    public func code(at timestampSeconds: Int64) -> String? {
+        try? TotpGenerator.generate(
+            secret: secret, algorithm: algorithm, digits: digits, period: period,
+            timestampSeconds: timestampSeconds)
+    }
+
     /// The encryptable / exportable part of the entry.
     public var plaintext: VaultEntryPlaintext {
         VaultEntryPlaintext(

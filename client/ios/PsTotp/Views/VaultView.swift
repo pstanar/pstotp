@@ -15,10 +15,15 @@ struct VaultView: View {
             Group {
                 if model.entries.isEmpty {
                     EmptyVaultView()
-                } else if model.layoutMode == .grid {
-                    grid
                 } else {
-                    list
+                    let shown = model.displayEntries(query: query)
+                    Group {
+                        if model.layoutMode == .grid { grid(shown) } else { list(shown) }
+                    }
+                    .searchable(text: $query, prompt: "Search accounts")
+                    .overlay {
+                        if shown.isEmpty { ContentUnavailableView.search(text: query) }
+                    }
                 }
             }
             .navigationTitle("PsTotp")
@@ -64,9 +69,8 @@ struct VaultView: View {
         model.sortMode == .manual && model.layoutMode == .list && model.entries.count > 1
     }
 
-    private var list: some View {
-        let shown = model.displayEntries(query: query)
-        return List {
+    private func list(_ shown: [VaultEntry]) -> some View {
+        List {
             ForEach(shown) { entry in
                 TotpCard(
                     entry: entry,
@@ -89,26 +93,17 @@ struct VaultView: View {
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
         .onChange(of: canReorder) { _, allowed in if !allowed { editMode = .inactive } }
-        .searchable(text: $query, prompt: "Search accounts")
-        .overlay {
-            if shown.isEmpty { ContentUnavailableView.search(text: query) }
-        }
         .accessibilityIdentifier("vault.list")
     }
 
-    private var grid: some View {
-        let shown = model.displayEntries(query: query)
-        return VaultGridView(
+    private func grid(_ shown: [VaultEntry]) -> some View {
+        VaultGridView(
             model: model,
             entries: shown,
             onShowQR: { qrEntry = $0 },
             onEdit: { editingEntry = $0 },
             onDelete: { pendingDeletion = $0 }
         )
-        .searchable(text: $query, prompt: "Search accounts")
-        .overlay {
-            if shown.isEmpty { ContentUnavailableView.search(text: query) }
-        }
     }
 
     private var layoutToggle: some View {
