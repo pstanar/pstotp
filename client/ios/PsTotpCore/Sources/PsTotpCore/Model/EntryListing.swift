@@ -56,6 +56,29 @@ public enum EntryListing {
         return visibleIds.first
     }
 
+    /// `ids` after moving the items at `source` to just before index `destination` — the semantics of
+    /// SwiftUI's `onMove` / `move(fromOffsets:toOffset:)`, where `destination` is a position in the
+    /// *original* array.
+    public static func moved(_ ids: [String], fromOffsets source: IndexSet, toOffset destination: Int) -> [String] {
+        let moving = source.map { ids[$0] }
+        var result = ids
+        for index in source.reversed() { result.remove(at: index) }
+        let removedBeforeDestination = source.filter { $0 < destination }.count
+        result.insert(contentsOf: moving, at: destination - removedBeforeDestination)
+        return result
+    }
+
+    /// The complete manual order after the user reordered what they could see.
+    ///
+    /// `visibleNewOrder` is the visible subset (e.g. the search results) in its new order. Those
+    /// entries are written back, in that order, into the slots the visible entries already occupied;
+    /// entries that were hidden keep their slots. (Android instead sends every hidden entry to the end.)
+    public static func reordered(all: [String], visibleNewOrder: [String]) -> [String] {
+        let visible = Set(visibleNewOrder)
+        var remaining = visibleNewOrder.makeIterator()
+        return all.map { visible.contains($0) ? (remaining.next() ?? $0) : $0 }
+    }
+
     /// `areInOrder` returns true/false when the pair is ordered, nil when they tie.
     private static func stableSorted(
         _ entries: [VaultEntry], by areInOrder: (VaultEntry, VaultEntry) -> Bool?
