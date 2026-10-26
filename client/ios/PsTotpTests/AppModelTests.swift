@@ -150,6 +150,31 @@ struct AppModelTests {
         #expect(relaunch.lockTimeout == .oneHour)
     }
 
+    @Test func layoutDefaultsToListAndPersistsAcrossLaunches() async {
+        let model = await started()
+        #expect(model.layoutMode == .list)
+        _ = await model.setupPassword(strong, confirm: strong)
+        model.setLayoutMode(.grid)
+        #expect(model.layoutMode == .grid)
+        await model.waitForPendingWrites()
+
+        let relaunch = await started()
+        #expect(relaunch.layoutMode == .grid)
+        relaunch.setLayoutMode(.list)
+        await relaunch.waitForPendingWrites()
+        #expect(await started().layoutMode == .list)
+    }
+
+    @Test func layoutDoesNotAffectSortingOrSearch() async {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        for name in ["Zeta", "alpha"] { _ = await model.addEntry(plain(name)) }
+        model.setSortMode(.alphabetical)
+        let list = model.displayEntries().map(\.issuer)
+        model.setLayoutMode(.grid)
+        #expect(model.displayEntries().map(\.issuer) == list)
+    }
+
     @Test func autoLockHonoursTheTimeout() async {
         let model = await started()
         _ = await model.setupPassword(strong, confirm: strong)

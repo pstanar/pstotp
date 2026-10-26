@@ -59,6 +59,13 @@ final class ScreenshotTests: XCTestCase {
         }
         try shot(app, "\(style)-4-vault")
 
+        app.buttons["vault.layout"].tap()
+        XCTAssertTrue(app.staticTexts["grid.issuer"].waitForExistence(timeout: 5))
+        try shot(app, "\(style)-4b-grid")
+        app.descendants(matching: .any)["tile.Google"].tap()
+        try shot(app, "\(style)-4c-grid-selected")
+        app.buttons["vault.layout"].tap()
+
         app.buttons["More options for GitHub"].tap()
         app.buttons["Show QR Code"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["qr.image"].waitForExistence(timeout: 5))

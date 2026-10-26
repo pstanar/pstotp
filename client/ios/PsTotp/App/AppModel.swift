@@ -14,6 +14,7 @@ final class AppModel {
     private(set) var entries: [VaultEntry] = []
     private(set) var sortMode: SortMode = .manual
     private(set) var sortReversed = false
+    private(set) var layoutMode: LayoutMode = .list
     private(set) var lockTimeout: LockTimeout = .fiveMinutes
 
     /// Shown on the setup / unlock screens.
@@ -43,6 +44,7 @@ final class AppModel {
             let setUp = try await repository.isSetUp()
             sortMode = SortMode.fromStorageKey(try await repository.getSetting(SettingsKeys.sortMode))
             sortReversed = try await repository.getSetting(SettingsKeys.sortReversed) == "true"
+            layoutMode = LayoutMode.fromStorageKey(try await repository.getSetting(SettingsKeys.layoutMode))
             lockTimeout = LockTimeout.fromMillis(
                 try await repository.getSetting(SettingsKeys.lockTimeoutMs).flatMap { Int64($0) })
             usage = Dictionary(uniqueKeysWithValues: try await repository.getAllUsage().map { ($0.entryId, $0) })
@@ -168,6 +170,11 @@ final class AppModel {
         sortReversed = reversed
         sortUsage = usage
         persist(SettingsKeys.sortReversed, String(reversed))
+    }
+
+    func setLayoutMode(_ mode: LayoutMode) {
+        layoutMode = mode
+        persist(SettingsKeys.layoutMode, mode.storageKey)
     }
 
     func setLockTimeout(_ timeout: LockTimeout) {

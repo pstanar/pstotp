@@ -30,6 +30,16 @@ final class PsTotpUITests: XCTestCase {
         manual.tap()
     }
 
+    /// Adds an account through the manual form and waits for its card.
+    private func addManual(issuer: String, account: String, secret: String) {
+        openAddManual()
+        type(issuer, into: "add.issuer")
+        type(account, into: "add.account")
+        type(secret, into: "add.secret")
+        app.buttons["add.submit"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.\(issuer)"].waitForExistence(timeout: 5))
+    }
+
     private func createVault() {
         type(password, into: "setup.password")
         type(password, into: "setup.confirm")
@@ -122,6 +132,55 @@ final class PsTotpUITests: XCTestCase {
 
         app.buttons["Close"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["card.GitHub"].waitForExistence(timeout: 5))
+    }
+
+    func testGridLayoutSelectsTilesCopiesAndSwitchesBack() {
+        createVault()
+        addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")
+        addManual(issuer: "Google", account: "alice@example.com", secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+
+        app.buttons["vault.layout"].tap()
+        let issuer = app.staticTexts["grid.issuer"]
+        XCTAssertTrue(issuer.waitForExistence(timeout: 5))
+        XCTAssertEqual(issuer.label, "GitHub", "the first entry is selected initially")
+        XCTAssertTrue(app.descendants(matching: .any)["tile.GitHub"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["tile.Google"].exists)
+
+        // Selecting a tile switches the detail panel.
+        app.descendants(matching: .any)["tile.Google"].tap()
+        XCTAssertTrue(app.staticTexts["Google"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["grid.issuer"].label, "Google")
+        let code = app.staticTexts["grid.code"]
+        XCTAssertTrue(code.exists)
+        XCTAssertNotNil(code.label.range(of: #"^Code (\d ){5}\d$"#, options: .regularExpression), code.label)
+
+        // The copy button copies and confirms.
+        app.buttons["grid.copy"].tap()
+        let toast = app.staticTexts["toast"]
+        XCTAssertTrue(toast.waitForExistence(timeout: 5))
+        XCTAssertTrue(toast.label.hasPrefix("Code copied"), toast.label)
+
+        // Back to the list: the cards return, and the layout button flips back.
+        app.buttons["vault.layout"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.GitHub"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["grid.issuer"].exists)
+    }
+
+    func testGridSearchFallsBackToAVisibleSelection() {
+        createVault()
+        addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")
+        addManual(issuer: "Google", account: "alice", secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+        app.buttons["vault.layout"].tap()
+        XCTAssertEqual(app.staticTexts["grid.issuer"].label, "GitHub")
+
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("goo")
+        // GitHub is filtered out, so the panel must move to the remaining entry.
+        XCTAssertTrue(app.descendants(matching: .any)["tile.Google"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["tile.GitHub"].exists)
+        XCTAssertEqual(app.staticTexts["grid.issuer"].label, "Google")
     }
 
     func testScanTabExplainsAMissingCameraOnTheSimulator() throws {
