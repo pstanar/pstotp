@@ -179,6 +179,60 @@ struct GridSupportTests {
     }
 }
 
+@Suite("Reordering")
+struct ReorderTests {
+    private let abcde = ["a", "b", "c", "d", "e"]
+
+    @Test func movedMatchesSwiftUIOnMoveSemantics() {
+        // Down: destination is a slot in the ORIGINAL array, so moving "a" to just before "d" is offset 3.
+        #expect(EntryListing.moved(abcde, fromOffsets: [0], toOffset: 3) == ["b", "c", "a", "d", "e"])
+        // To the very end.
+        #expect(EntryListing.moved(abcde, fromOffsets: [0], toOffset: 5) == ["b", "c", "d", "e", "a"])
+        // Up.
+        #expect(EntryListing.moved(abcde, fromOffsets: [3], toOffset: 1) == ["a", "d", "b", "c", "e"])
+        #expect(EntryListing.moved(abcde, fromOffsets: [4], toOffset: 0) == ["e", "a", "b", "c", "d"])
+        // Dropping an item onto itself, or just after itself, changes nothing.
+        #expect(EntryListing.moved(abcde, fromOffsets: [2], toOffset: 2) == abcde)
+        #expect(EntryListing.moved(abcde, fromOffsets: [2], toOffset: 3) == abcde)
+    }
+
+    @Test func movedHandlesSeveralItemsKeepingTheirRelativeOrder() {
+        #expect(EntryListing.moved(abcde, fromOffsets: [0, 2], toOffset: 5) == ["b", "d", "e", "a", "c"])
+        #expect(EntryListing.moved(abcde, fromOffsets: [1, 3], toOffset: 0) == ["b", "d", "a", "c", "e"])
+        #expect(EntryListing.moved(abcde, fromOffsets: [0, 1], toOffset: 4) == ["c", "d", "a", "b", "e"])
+    }
+
+    @Test func movedNeverLosesOrDuplicatesItems() {
+        for from in 0..<5 { for to in 0...5 {
+            let result = EntryListing.moved(abcde, fromOffsets: [from], toOffset: to)
+            #expect(result.sorted() == abcde, "from \(from) to \(to)")
+        } }
+    }
+
+    @Test func reorderingEverythingIsJustTheNewOrder() {
+        #expect(EntryListing.reordered(all: abcde, visibleNewOrder: ["e", "d", "c", "b", "a"]) == ["e", "d", "c", "b", "a"])
+    }
+
+    @Test func hiddenEntriesKeepTheirSlotsWhenTheVisibleOnesAreReordered() {
+        // A search shows b, d, e (a and c are hidden). The user swaps b and e.
+        let result = EntryListing.reordered(all: abcde, visibleNewOrder: ["e", "d", "b"])
+        #expect(result == ["a", "e", "c", "d", "b"])           // a and c did not move
+        // Android would have produced ["e", "d", "b", "a", "c"] — hidden entries pushed to the end.
+    }
+
+    @Test func reorderingAnUnchangedOrderIsANoOp() {
+        #expect(EntryListing.reordered(all: abcde, visibleNewOrder: ["b", "d"]) == abcde)
+        #expect(EntryListing.reordered(all: abcde, visibleNewOrder: []) == abcde)
+    }
+
+    @Test func dragAmongSearchResultsEndToEnd() {
+        let visible = ["b", "d", "e"]                           // what the list shows
+        let newVisible = EntryListing.moved(visible, fromOffsets: [2], toOffset: 0)   // drag e to the top
+        #expect(newVisible == ["e", "b", "d"])
+        #expect(EntryListing.reordered(all: abcde, visibleNewOrder: newVisible) == ["a", "e", "c", "b", "d"])
+    }
+}
+
 @Suite("PasswordPolicy")
 struct PasswordPolicyTests {
     @Test func reportsTheFirstViolatedRule() {
