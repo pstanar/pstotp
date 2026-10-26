@@ -150,9 +150,12 @@ private final class CameraController: NSObject, AVCaptureMetadataOutputObjectsDe
         }
     }
 
+    /// `stopped` is only touched on `queue`, so a stop issued before setup finishes still wins.
     func stop() {
-        stopped = true
-        queue.async { [session] in if session.isRunning { session.stopRunning() } }
+        queue.async { [self] in
+            stopped = true
+            if session.isRunning { session.stopRunning() }
+        }
     }
 
     func metadataOutput(
