@@ -1,9 +1,8 @@
 import Foundation
 
+/// The raw value is what is stored in settings (same strings as Android).
 public enum SortMode: String, CaseIterable, Sendable {
     case manual, alphabetical, lru, mfu
-
-    public var storageKey: String { rawValue }
 
     public var label: String {
         switch self {
@@ -19,10 +18,9 @@ public enum SortMode: String, CaseIterable, Sendable {
     }
 }
 
+/// The raw value is what is stored in settings (same strings as Android).
 public enum LayoutMode: String, CaseIterable, Sendable {
     case list, grid
-
-    public var storageKey: String { rawValue }
 
     public var label: String {
         switch self {

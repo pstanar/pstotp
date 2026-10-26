@@ -49,6 +49,5 @@ public enum SettingsKeys {
     public static let iconLibraryDirty = "icon_library_dirty"
 
     // Lock timeout
-    public static let lockTimeoutMs = "lock_timeout_ms"
-    public static let defaultLockTimeoutMs: Int64 = 5 * 60 * 1000
+    public static let lockTimeoutMs = "lock_timeout_ms"   // default: `LockTimeout.fiveMinutes`
 }

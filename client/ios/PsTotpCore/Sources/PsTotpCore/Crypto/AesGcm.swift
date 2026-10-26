@@ -12,13 +12,9 @@ public enum AesGcm {
     /// - Returns: nonce || ciphertext || tag
     public static func encrypt(key: Data, plaintext: Data, associatedData: Data? = nil) throws -> Data {
         guard key.count == keySize else { throw CryptoError.invalidKeyLength(expected: keySize) }
-        let symmetricKey = SymmetricKey(data: key)
-        let sealed: AES.GCM.SealedBox
-        if let associatedData {
-            sealed = try AES.GCM.seal(plaintext, using: symmetricKey, authenticating: associatedData)
-        } else {
-            sealed = try AES.GCM.seal(plaintext, using: symmetricKey)
-        }
+        // No associated data and empty associated data are the same to GCM.
+        let sealed = try AES.GCM.seal(
+            plaintext, using: SymmetricKey(data: key), authenticating: associatedData ?? Data())
         // `combined` is nil only for non-12-byte nonces; CryptoKit generates 12.
         return sealed.combined!
     }
@@ -27,13 +23,9 @@ public enum AesGcm {
     public static func decrypt(key: Data, payload: Data, associatedData: Data? = nil) throws -> Data {
         guard key.count == keySize else { throw CryptoError.invalidKeyLength(expected: keySize) }
         guard payload.count > nonceSize else { throw CryptoError.payloadTooShort }
-        let symmetricKey = SymmetricKey(data: key)
         do {
             let box = try AES.GCM.SealedBox(combined: payload)
-            if let associatedData {
-                return try AES.GCM.open(box, using: symmetricKey, authenticating: associatedData)
-            }
-            return try AES.GCM.open(box, using: symmetricKey)
+            return try AES.GCM.open(box, using: SymmetricKey(data: key), authenticating: associatedData ?? Data())
         } catch {
             throw CryptoError.decryptionFailed
         }

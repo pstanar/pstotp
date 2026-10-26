@@ -194,7 +194,7 @@ struct GridSupportTests {
         #expect(LayoutMode.fromStorageKey("list") == .list)
         #expect(LayoutMode.fromStorageKey("nonsense") == .list)
         #expect(LayoutMode.fromStorageKey(nil) == .list)
-        #expect(LayoutMode.grid.storageKey == "grid" && LayoutMode.list.storageKey == "list")
+        #expect(LayoutMode.grid.rawValue == "grid" && LayoutMode.list.rawValue == "list")
     }
 }
 

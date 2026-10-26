@@ -117,7 +117,7 @@ struct PersistenceTests {
         #expect(SettingsKeys.encryptedVaultKey == "encrypted_vault_key")
         #expect(SettingsKeys.lockTimeoutMs == "lock_timeout_ms")
         #expect(SettingsKeys.pendingReorder == "pending_reorder")
-        #expect(SettingsKeys.defaultLockTimeoutMs == 300_000)
+        #expect(LockTimeout.fromMillis(nil).millis == 300_000)   // Android's default lock timeout
     }
 
     // MARK: Usage
