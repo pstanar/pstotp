@@ -8,6 +8,7 @@ struct VaultView: View {
     @State private var pendingDeletion: VaultEntry?
     @State private var qrEntry: VaultEntry?
     @State private var editingEntry: VaultEntry?
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack {
@@ -24,8 +25,14 @@ struct VaultView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Lock", systemImage: "lock") { model.lock() }
-                        .accessibilityIdentifier("vault.lock")
+                    if editMode.isEditing {
+                        Button("Done") { editMode = .inactive }
+                            .fontWeight(.semibold)
+                            .accessibilityIdentifier("vault.done")
+                    } else {
+                        Button("Lock", systemImage: "lock") { model.lock() }
+                            .accessibilityIdentifier("vault.lock")
+                    }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     layoutToggle
@@ -52,6 +59,11 @@ struct VaultView: View {
         }
     }
 
+    /// Dragging only makes sense in the list, in the user's own (manual) order, with something to move.
+    private var canReorder: Bool {
+        model.sortMode == .manual && model.layoutMode == .list && model.entries.count > 1
+    }
+
     private var list: some View {
         let shown = model.displayEntries(query: query)
         return List {
@@ -70,8 +82,13 @@ struct VaultView: View {
                     Button("Delete", systemImage: "trash", role: .destructive) { pendingDeletion = entry }
                 }
             }
+            .onMove(perform: canReorder ? { source, destination in
+                model.moveEntries(shownIds: shown.map(\.id), fromOffsets: source, toOffset: destination)
+            } : nil)
         }
         .listStyle(.plain)
+        .environment(\.editMode, $editMode)
+        .onChange(of: canReorder) { _, allowed in if !allowed { editMode = .inactive } }
         .searchable(text: $query, prompt: "Search accounts")
         .overlay {
             if shown.isEmpty { ContentUnavailableView.search(text: query) }
@@ -114,6 +131,10 @@ struct VaultView: View {
                 Label("Reversed", systemImage: "arrow.up").tag(true)
             }
             .disabled(model.sortMode == .manual)   // reversal doesn't apply to the user's own order
+            if canReorder {
+                Divider()
+                Button("Reorder Accounts", systemImage: "line.3.horizontal") { editMode = .active }
+            }
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }

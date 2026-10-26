@@ -11,6 +11,9 @@ struct TotpCard: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
 
+    @Environment(\.editMode) private var editMode
+    private var isReordering: Bool { editMode?.wrappedValue.isEditing == true }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = Int64(context.date.timeIntervalSince1970)
@@ -58,26 +61,31 @@ struct TotpCard: View {
 
                 Spacer(minLength: 0)
 
-                Menu {
-                    Button("Copy Secret Key", systemImage: "key", action: onCopySecret)
-                    Button("Show QR Code", systemImage: "qrcode", action: onShowQR)
-                    Button("Edit", systemImage: "pencil", action: onEdit)
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 32, height: 44)
-                        .foregroundStyle(Palette.onSurfaceVariant)
-                }
-                .accessibilityLabel("More options for \(entry.issuer)")
+                // The system draws its drag handle at the trailing edge while reordering.
+                if !isReordering { optionsMenu }
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14))
             .contentShape(RoundedRectangle(cornerRadius: 14))
-            .onTapGesture { if let code { onCopyCode(code) } }
+            .onTapGesture { if !isReordering, let code { onCopyCode(code) } }
             .accessibilityElement(children: .contain)
             .accessibilityAction(named: "Copy code") { if let code { onCopyCode(code) } }
         }
         .accessibilityIdentifier("card.\(entry.issuer)")
+    }
+
+    private var optionsMenu: some View {
+        Menu {
+            Button("Copy Secret Key", systemImage: "key", action: onCopySecret)
+            Button("Show QR Code", systemImage: "qrcode", action: onShowQR)
+            Button("Edit", systemImage: "pencil", action: onEdit)
+            Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 32, height: 44)
+                .foregroundStyle(Palette.onSurfaceVariant)
+        }
+        .accessibilityLabel("More options for \(entry.issuer)")
     }
 }
