@@ -7,6 +7,7 @@ struct VaultView: View {
     @State private var showingAdd = false
     @State private var pendingDeletion: VaultEntry?
     @State private var qrEntry: VaultEntry?
+    @State private var editingEntry: VaultEntry?
 
     var body: some View {
         NavigationStack {
@@ -38,6 +39,7 @@ struct VaultView: View {
         }
         .sheet(isPresented: $showingAdd) { AddAccountView(model: model) }
         .sheet(item: $qrEntry) { QRCodeSheet(entry: $0) }
+        .sheet(item: $editingEntry) { EditAccountView(model: model, entry: $0) }
         .alert(
             "Delete Account",
             isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
@@ -59,6 +61,7 @@ struct VaultView: View {
                     onCopyCode: { model.copyCode($0, for: entry) },
                     onCopySecret: { model.copySecret(of: entry) },
                     onShowQR: { qrEntry = entry },
+                    onEdit: { editingEntry = entry },
                     onDelete: { pendingDeletion = entry })
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -82,6 +85,7 @@ struct VaultView: View {
             model: model,
             entries: shown,
             onShowQR: { qrEntry = $0 },
+            onEdit: { editingEntry = $0 },
             onDelete: { pendingDeletion = $0 }
         )
         .searchable(text: $query, prompt: "Search accounts")

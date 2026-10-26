@@ -33,6 +33,7 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 18 | Camera permission denied | Shows "Camera permission required" with a Grant button that re-requests. | iOS only prompts once, so the denied state explains and offers "Open Settings". No-camera devices (simulator) get their own message. | Platform permission model. | platform | |
 | 19 | QR display | `AlertDialog`, ZXing at the default error-correction level. | Sheet with a "keep it private" note; CoreImage at level M with a 4-module quiet zone, rendered with whole pixels per module. | Native presentation; the extra note is because the code reveals the secret. | cosmetic | |
 | 20 | Photo picking | Photo picker via activity result. | System `PhotosPicker` (no photo-library permission needed); EXIF orientation honoured and huge photos bounded to 4096 px before decoding. | Platform picker; protects memory. | platform | |
+| 21 | Saving an unchanged edit | Always re-encrypts and updates the entry, marking it pending sync when connected. | Does nothing when the trimmed values equal the current ones. | Avoids a pointless write and sync. | internal | |
 
 ## Same result, but written explicitly (not differences)
 
@@ -46,6 +47,6 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 
 ## Not ported yet (pending, not differences)
 
-edit screen (and its menu item on cards/tiles), drag-to-reorder, settings (lock timeout, layout,
+icon editing (the Edit screen keeps the current icon; changing it comes with the icon picker), drag-to-reorder, settings (lock timeout, layout,
 import/export UI, change password), biometric unlock, icon picker / icon library, "next code" preview,
 connected mode (server sync, passkeys, devices, audit, recovery).

@@ -9,6 +9,7 @@ struct TotpGridTile: View {
     let onSelect: () -> Void
     let onCopySecret: () -> Void
     let onShowQR: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -55,6 +56,7 @@ struct TotpGridTile: View {
     @ViewBuilder private var actions: some View {
         Button("Copy Secret Key", systemImage: "key", action: onCopySecret)
         Button("Show QR Code", systemImage: "qrcode", action: onShowQR)
+        Button("Edit", systemImage: "pencil", action: onEdit)
         Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
     }
 }

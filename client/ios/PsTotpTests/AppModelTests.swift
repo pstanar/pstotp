@@ -105,6 +105,71 @@ struct AppModelTests {
         #expect(relaunch.entries.map(\.issuer) == ["B"])
     }
 
+    // MARK: Editing
+
+    @Test func editPersistsAndKeepsSecretAndIcon() async {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        _ = await model.addEntry(VaultEntryPlaintext(issuer: "GitHub", accountName: "octocat",
+                                                     secret: "JBSWY3DPEHPK3PXP", algorithm: "SHA256",
+                                                     digits: 8, period: 60, icon: "🔑"))
+        let original = model.entries[0]
+        #expect(await model.updateEntry(original, issuer: "  GitHub Enterprise ", accountName: " work ") == nil)
+
+        for candidate in [model.entries[0], await relaunchedFirstEntry()] {
+            #expect(candidate.id == original.id)
+            #expect(candidate.issuer == "GitHub Enterprise")
+            #expect(candidate.accountName == "work")
+            #expect(candidate.secret == "JBSWY3DPEHPK3PXP")
+            #expect(candidate.algorithm == "SHA256" && candidate.digits == 8 && candidate.period == 60)
+            #expect(candidate.icon == "🔑")
+        }
+    }
+
+    private func relaunchedFirstEntry() async -> VaultEntry {
+        let relaunch = await started()
+        _ = await relaunch.unlock(password: strong)
+        return relaunch.entries[0]
+    }
+
+    @Test func blankIssuerBecomesUnknownAndBlankAccountIsAllowed() async {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        _ = await model.addEntry(plain("GitHub"))
+        _ = await model.updateEntry(model.entries[0], issuer: "   ", accountName: "")
+        #expect(model.entries[0].issuer == "Unknown")
+        #expect(model.entries[0].accountName == "")
+    }
+
+    @Test func editingWhileLockedIsRefused() async {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        _ = await model.addEntry(plain("GitHub"))
+        let entry = model.entries[0]
+        model.lock()
+        #expect(await model.updateEntry(entry, issuer: "Other", accountName: "x") == "Vault is locked")
+    }
+
+    @Test func renamingReSortsAnAlphabeticalList() async {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        for name in ["Zeta", "alpha"] { _ = await model.addEntry(plain(name)) }
+        model.setSortMode(.alphabetical)
+        #expect(model.displayEntries().map(\.issuer) == ["alpha", "Zeta"])
+        let zeta = model.entries.first { $0.issuer == "Zeta" }!
+        _ = await model.updateEntry(zeta, issuer: "Aardvark", accountName: zeta.accountName)
+        #expect(model.displayEntries().map(\.issuer) == ["Aardvark", "alpha"])
+    }
+
+    @Test func lookupFindsEntriesById() async {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        _ = await model.addEntry(plain("GitHub"))
+        let id = model.entries[0].id
+        #expect(model.entry(id: id)?.issuer == "GitHub")
+        #expect(model.entry(id: "nope") == nil)
+    }
+
     // MARK: Listing
 
     @Test func searchAndSortApplyToTheDisplayList() async {
