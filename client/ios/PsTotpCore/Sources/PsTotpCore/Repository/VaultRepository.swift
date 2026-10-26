@@ -70,19 +70,7 @@ public final class VaultRepository: Sendable {
     /// corruption — but anything beyond that throws ``VaultKeyMismatchError``.
     public func getAllEntries(vaultKey: Data) async throws -> [VaultEntry] {
         let all = try await db.writer.read { try VaultEntryQueries.live($0) }
-        if all.isEmpty { return [] }
-
-        var decrypted = [VaultEntry]()
-        var failures = 0
-        for record in all {
-            do { decrypted.append(try Self.decryptEntry(vaultKey: vaultKey, record: record)) }
-            catch { failures += 1 }
-        }
-
-        if isVaultKeyMismatch(failures: failures, successes: decrypted.count) {
-            throw VaultKeyMismatchError(failed: failures, total: all.count)
-        }
-        return decrypted
+        return try Self.decrypt(vaultKey: vaultKey, records: all)
     }
 
     /// Live, ordered snapshots of the encrypted rows (decrypt with ``decrypt(vaultKey:records:)``).
@@ -111,24 +99,12 @@ public final class VaultRepository: Sendable {
             return sortOrder
         }
 
-        return VaultEntry(
-            id: id,
-            issuer: plaintext.issuer,
-            accountName: plaintext.accountName,
-            secret: plaintext.secret,
-            algorithm: plaintext.algorithm,
-            digits: plaintext.digits,
-            period: plaintext.period,
-            icon: plaintext.icon,
-            sortOrder: sortOrder)
+        return VaultEntry(id: id, plaintext: plaintext, sortOrder: sortOrder)
     }
 
     /// Re-encrypt and store an edited entry. Does nothing if the entry doesn't exist.
     public func updateEntry(vaultKey: Data, entry: VaultEntry) async throws {
-        let plaintext = VaultEntryPlaintext(
-            issuer: entry.issuer, accountName: entry.accountName, secret: entry.secret,
-            algorithm: entry.algorithm, digits: entry.digits, period: entry.period, icon: entry.icon)
-        let encrypted = try Self.encryptPayload(vaultKey: vaultKey, id: entry.id, plaintext: plaintext)
+        let encrypted = try Self.encryptPayload(vaultKey: vaultKey, id: entry.id, plaintext: entry.plaintext)
         let timestamp = now()
 
         try await db.writer.write { db in
@@ -237,34 +213,18 @@ public final class VaultRepository: Sendable {
     static func decryptEntry(vaultKey: Data, record: VaultEntryRecord) throws -> VaultEntry {
         let json = try AesGcm.decrypt(
             key: vaultKey, payload: record.encryptedPayload, associatedData: Data(record.id.utf8))
-        let p = try jsonToPlaintext(json)
-        return VaultEntry(
-            id: record.id, issuer: p.issuer, accountName: p.accountName, secret: p.secret,
-            algorithm: p.algorithm, digits: p.digits, period: p.period, icon: p.icon,
-            version: 1, sortOrder: record.sortOrder)
+        return VaultEntry(id: record.id, plaintext: try jsonToPlaintext(json), sortOrder: record.sortOrder)
     }
 
     static func plaintextToJson(_ p: VaultEntryPlaintext) throws -> Data {
-        var obj: JSONObject = [
-            "issuer": p.issuer, "accountName": p.accountName, "secret": p.secret,
-            "algorithm": p.algorithm, "digits": p.digits, "period": p.period,
-        ]
-        if let icon = p.icon { obj["icon"] = icon }
-        return try JSONSerialization.data(withJSONObject: obj, options: [.withoutEscapingSlashes])
+        try JSONSerialization.data(withJSONObject: p.jsonObject, options: [.withoutEscapingSlashes])
     }
 
     static func jsonToPlaintext(_ json: Data) throws -> VaultEntryPlaintext {
         guard let obj = try JSONSerialization.jsonObject(with: json) as? JSONObject,
-              let issuer = obj["issuer"] as? String,
-              let accountName = obj["accountName"] as? String,
-              let secret = obj["secret"] as? String
+              let plaintext = VaultEntryPlaintext(json: obj)
         else { throw RepositoryError.malformedPayload }
-        return VaultEntryPlaintext(
-            issuer: issuer, accountName: accountName, secret: secret,
-            algorithm: obj.optString("algorithm", "SHA1"),
-            digits: obj.optInt("digits", 6),
-            period: obj.optInt("period", 30),
-            icon: obj.optStringField("icon"))
+        return plaintext
     }
 
     /// Argon2 is deliberately expensive (64 MB, ~100+ ms); keep it off the caller's executor.

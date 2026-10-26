@@ -142,6 +142,14 @@ struct AppLogicTests {
         }
     }
 
+    @Test func validatedRejectsUnsupportedAlgorithmAndNormalisesItsCase() throws {
+        let entry = VaultEntryPlaintext(issuer: "I", accountName: "A", secret: "JBSWY3DPEHPK3PXP", algorithm: "MD5")
+        #expect(throws: EntryValidationError.algorithmUnsupported) { _ = try EntryValidation.validated(entry) }
+        var lower = entry
+        lower.algorithm = "sha256"
+        #expect(try EntryValidation.validated(lower).algorithm == "SHA256")
+    }
+
     @Test func everyValidatedSecretProducesATotpCode() throws {
         let e = try EntryValidation.manualEntry(issuer: "I", accountName: "A", secret: "jbswy3dpehpk3pxp",
                                                 algorithm: "SHA1", digits: "6", period: "30")

@@ -39,7 +39,7 @@ public enum OtpauthUri {
         let (issuer, accountName) = resolveLabel(path, queryIssuer: query["issuer"])
 
         let algorithm = query["algorithm"]?.uppercased() ?? "SHA1"
-        guard ["SHA1", "SHA256", "SHA512"].contains(algorithm) else {
+        guard EntryValidation.supportedAlgorithms.contains(algorithm) else {
             throw OtpauthError.unsupportedAlgorithm(algorithm)
         }
 

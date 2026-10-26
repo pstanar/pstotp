@@ -67,4 +67,15 @@ struct BehaviourTests {
         #expect(TotpGenerator.timeRemaining(period: 30, now: 60) == 30)
         #expect(TotpGenerator.timeRemaining(period: 30, now: 89) == 1)
     }
+
+    /// Imported or synced entries can carry any numbers; they must fail, not trap.
+    @Test func generatorRejectsParametersThatWouldTrap() {
+        let secret = "JBSWY3DPEHPK3PXP"
+        #expect(throws: CryptoError.invalidTotpParameters) { try TotpGenerator.generate(secret: secret, period: 0) }
+        #expect(throws: CryptoError.invalidTotpParameters) { try TotpGenerator.generate(secret: secret, period: -30) }
+        #expect(throws: CryptoError.invalidTotpParameters) { try TotpGenerator.generate(secret: secret, digits: 0) }
+        #expect(throws: CryptoError.invalidTotpParameters) { try TotpGenerator.generate(secret: secret, digits: 20) }
+        #expect(TotpGenerator.timeRemaining(period: 0, now: 100) == 0)
+        #expect(TotpGenerator.timeRemaining(period: -30, now: 100) == 0)
+    }
 }

@@ -6,11 +6,7 @@ struct QRCodeSheet: View {
     let entry: VaultEntry
     @Environment(\.dismiss) private var dismiss
 
-    private var uri: String {
-        OtpauthUri.build(VaultEntryPlaintext(
-            issuer: entry.issuer, accountName: entry.accountName, secret: entry.secret,
-            algorithm: entry.algorithm, digits: entry.digits, period: entry.period, icon: entry.icon))
-    }
+    private var uri: String { OtpauthUri.build(entry.plaintext) }
 
     var body: some View {
         NavigationStack {

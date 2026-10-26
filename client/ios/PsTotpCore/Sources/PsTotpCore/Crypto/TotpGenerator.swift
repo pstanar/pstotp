@@ -15,6 +15,9 @@ public enum TotpGenerator {
         period: Int = 30,
         timestampSeconds: Int64 = Int64(Date().timeIntervalSince1970)
     ) throws -> String {
+        // Validation normally rules these out, but a bad value must throw rather than trap
+        // (division by zero, negative counter, modulus overflow).
+        guard period > 0, (1...10).contains(digits) else { throw CryptoError.invalidTotpParameters }
         let key = SymmetricKey(data: try Base32.decode(secret))
         var counter = UInt64(timestampSeconds / Int64(period)).bigEndian
         let counterBytes = withUnsafeBytes(of: &counter) { Data($0) }
@@ -38,8 +41,9 @@ public enum TotpGenerator {
         return String(repeating: "0", count: max(0, digits - value.count)) + value
     }
 
-    /// Seconds remaining until the current code expires.
+    /// Seconds remaining until the current code expires (0 for an invalid period).
     public static func timeRemaining(period: Int = 30, now: Int64 = Int64(Date().timeIntervalSince1970)) -> Int {
-        period - Int(now % Int64(period))
+        guard period > 0 else { return 0 }
+        return period - Int(now % Int64(period))
     }
 }
