@@ -11,7 +11,7 @@ struct CountdownRing<Content: View>: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { context in
             let t = context.date.timeIntervalSince1970
-            let fraction = 1 - t.truncatingRemainder(dividingBy: Double(period)) / Double(period)
+            let fraction = period > 0 ? 1 - t.truncatingRemainder(dividingBy: Double(period)) / Double(period) : 0
 
             ZStack {
                 Circle().stroke(Palette.surfaceVariant, lineWidth: lineWidth)

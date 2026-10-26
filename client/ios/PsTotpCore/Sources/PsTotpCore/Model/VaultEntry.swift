@@ -37,6 +37,20 @@ public struct VaultEntry: Equatable, Hashable, Identifiable, Sendable {
         self.version = version
         self.sortOrder = sortOrder
     }
+
+    public init(id: String, plaintext p: VaultEntryPlaintext, version: Int = 1, sortOrder: Int = 0) {
+        self.init(
+            id: id, issuer: p.issuer, accountName: p.accountName, secret: p.secret,
+            algorithm: p.algorithm, digits: p.digits, period: p.period, icon: p.icon,
+            version: version, sortOrder: sortOrder)
+    }
+
+    /// The encryptable / exportable part of the entry.
+    public var plaintext: VaultEntryPlaintext {
+        VaultEntryPlaintext(
+            issuer: issuer, accountName: accountName, secret: secret,
+            algorithm: algorithm, digits: digits, period: period, icon: icon)
+    }
 }
 
 /// JSON-serializable plaintext for encryption. The encrypted payload stored locally is
@@ -66,5 +80,34 @@ public struct VaultEntryPlaintext: Equatable, Hashable, Codable, Sendable {
         self.digits = digits
         self.period = period
         self.icon = icon
+    }
+}
+
+// MARK: - JSON shape
+
+/// One JSON shape for the encrypted vault payload and the plain/encrypted export formats.
+extension VaultEntryPlaintext {
+    var jsonObject: JSONObject {
+        var obj: JSONObject = [
+            "issuer": issuer, "accountName": accountName, "secret": secret,
+            "algorithm": algorithm, "digits": digits, "period": period,
+        ]
+        if let icon { obj["icon"] = icon }
+        return obj
+    }
+
+    /// Lenient like Android's org.json reads: optional fields default, an empty icon means none.
+    /// - Returns: nil when `issuer`, `accountName` or `secret` is missing.
+    init?(json obj: JSONObject) {
+        guard let issuer = obj["issuer"] as? String,
+              let accountName = obj["accountName"] as? String,
+              let secret = obj["secret"] as? String
+        else { return nil }
+        self.init(
+            issuer: issuer, accountName: accountName, secret: secret,
+            algorithm: obj.optString("algorithm", "SHA1"),
+            digits: obj.optInt("digits", 6),
+            period: obj.optInt("period", 30),
+            icon: obj.optStringField("icon"))
     }
 }

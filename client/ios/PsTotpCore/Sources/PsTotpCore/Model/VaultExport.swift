@@ -51,18 +51,31 @@ public enum VaultExport {
 
     /// otpauth:// URIs, one per line.
     public static func exportOtpauthUris(entries: [VaultEntry]) -> String {
-        entries.map {
-            OtpauthUri.build(VaultEntryPlaintext(
-                issuer: $0.issuer, accountName: $0.accountName, secret: $0.secret,
-                algorithm: $0.algorithm, digits: $0.digits, period: $0.period, icon: $0.icon))
-        }.joined(separator: "\n")
+        entries.map { OtpauthUri.build($0.plaintext) }.joined(separator: "\n")
     }
 
     // MARK: Import
 
     /// Auto-detects otpauth:// lists, otpauth-migration:// (Google), pstotp-plain / pstotp-export,
-    /// Aegis plain JSON and 2FAS JSON.
+    /// Aegis plain JSON and 2FAS JSON. Every entry is validated (see `EntryValidation`); the first
+    /// one that couldn't produce codes fails the import.
     public static func importAutoDetect(_ content: String) -> ImportResult {
+        switch parseAutoDetect(content) {
+        case .success(let entries): validatedResult(entries)
+        case let other: other
+        }
+    }
+
+    private static func validatedResult(_ entries: [VaultEntryPlaintext]) -> ImportResult {
+        var valid = [VaultEntryPlaintext]()
+        for entry in entries {
+            do { valid.append(try EntryValidation.validated(entry)) }
+            catch { return .error("Invalid account \"\(entry.issuer)\": \(error)") }
+        }
+        return .success(valid)
+    }
+
+    private static func parseAutoDetect(_ content: String) -> ImportResult {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Check migration first so it doesn't fall into the plain otpauth:// branch.
@@ -106,7 +119,8 @@ public enum VaultExport {
         return .error("Unrecognized file format")
     }
 
-    /// Import an encrypted export with its password.
+    /// Import an encrypted export with its password. Throws `EntryValidationError` for an entry
+    /// that couldn't produce codes.
     public static func importEncrypted(_ content: String, password: String) throws -> [VaultEntryPlaintext] {
         guard let json = (try? JSONSerialization.jsonObject(with: Data(content.utf8))) as? JSONObject,
               let saltB64 = json["salt"] as? String, let salt = Data(base64Encoded: saltB64),
@@ -124,7 +138,7 @@ public enum VaultExport {
         guard let array = (try? JSONSerialization.jsonObject(with: plain)) as? [Any] else {
             throw ExportError.malformedEncryptedExport
         }
-        return try jsonArrayToPlaintexts(array)
+        return try jsonArrayToPlaintexts(array).map(EntryValidation.validated)
     }
 
     // MARK: JSON shape
@@ -136,36 +150,14 @@ public enum VaultExport {
     }
 
     private static func entriesToJson(_ entries: [VaultEntry]) -> [JSONObject] {
-        entries.map { e in
-            var obj: JSONObject = [
-                "issuer": e.issuer,
-                "accountName": e.accountName,
-                "secret": e.secret,
-                "algorithm": e.algorithm,
-                "digits": e.digits,
-                "period": e.period,
-            ]
-            if let icon = e.icon { obj["icon"] = icon }
-            return obj
-        }
+        entries.map(\.plaintext.jsonObject)
     }
 
     private static func jsonArrayToPlaintexts(_ array: [Any]) throws -> [VaultEntryPlaintext] {
         try array.map { element in
-            guard let obj = element as? JSONObject,
-                  let issuer = obj["issuer"] as? String,
-                  let accountName = obj["accountName"] as? String,
-                  let secret = obj["secret"] as? String
+            guard let obj = element as? JSONObject, let plaintext = VaultEntryPlaintext(json: obj)
             else { throw ExportError.malformedEncryptedExport }
-            return VaultEntryPlaintext(
-                issuer: issuer,
-                accountName: accountName,
-                secret: secret,
-                algorithm: obj.optString("algorithm", "SHA1"),
-                digits: obj.optInt("digits", 6),
-                period: obj.optInt("period", 30),
-                icon: obj["icon"] as? String
-            )
+            return plaintext
         }
     }
 }

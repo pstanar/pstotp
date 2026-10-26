@@ -5,6 +5,7 @@ public enum EntryValidationError: Error, Equatable, CustomStringConvertible {
     case secretInvalid
     case digitsOutOfRange
     case periodInvalid
+    case algorithmUnsupported
 
     public var description: String {
         switch self {
@@ -12,15 +13,17 @@ public enum EntryValidationError: Error, Equatable, CustomStringConvertible {
         case .secretInvalid: "Secret key is not valid Base32"
         case .digitsOutOfRange: "Digits must be between 4 and 10"
         case .periodInvalid: "Period must be a positive number"
+        case .algorithmUnsupported: "Unsupported algorithm"
         }
     }
 }
 
-/// Validation for new entries, whether typed in or parsed from an otpauth:// URI.
+/// Validation for new entries, whether typed in, scanned, or imported from a file.
 ///
 /// Android's manual form accepts any secret and the card then fails when it generates a code;
 /// iOS rejects a secret that isn't decodable Base32 up front.
 public enum EntryValidation {
+    public static let supportedAlgorithms = ["SHA1", "SHA256", "SHA512"]
 
     /// Normalise a typed secret: trim, drop spaces, uppercase.
     public static func normalizedSecret(_ raw: String) -> String {
@@ -29,15 +32,19 @@ public enum EntryValidation {
             .uppercased()
     }
 
-    /// Check an already-built entry (e.g. from `OtpauthUri.parse`), returning it with a normalised secret.
+    /// Check an already-built entry (e.g. from `OtpauthUri.parse` or an import), returning it with
+    /// a normalised secret and algorithm.
     public static func validated(_ entry: VaultEntryPlaintext) throws -> VaultEntryPlaintext {
         let secret = normalizedSecret(entry.secret)
         guard !secret.isEmpty else { throw EntryValidationError.secretRequired }
         guard let key = try? Base32.decode(secret), !key.isEmpty else { throw EntryValidationError.secretInvalid }
         guard (4...10).contains(entry.digits) else { throw EntryValidationError.digitsOutOfRange }
         guard entry.period > 0 else { throw EntryValidationError.periodInvalid }
+        let algorithm = entry.algorithm.uppercased()
+        guard supportedAlgorithms.contains(algorithm) else { throw EntryValidationError.algorithmUnsupported }
         var result = entry
         result.secret = secret
+        result.algorithm = algorithm
         return result
     }
 

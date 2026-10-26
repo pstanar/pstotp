@@ -126,6 +126,41 @@ struct VaultExportTests {
             VaultEntryPlaintext(issuer: "N", accountName: "N", secret: "JBSWY3DPEHPK3PXP")]))
     }
 
+    // MARK: Validation of imported entries
+
+    @Test func importRejectsEntriesThatCannotProduceCodes() {
+        let zeroPeriod = #"{"version":1,"header":{},"db":{"entries":[{"type":"totp","name":"a","issuer":"E","info":{"secret":"JBSWY3DPEHPK3PXP","period":0}}]}}"#
+        #expect(VaultExport.importAutoDetect(zeroPeriod) == .error("Invalid account \"E\": Period must be a positive number"))
+
+        let badSecret = #"{"format":"pstotp-plain","entries":[{"issuer":"E","accountName":"a","secret":"not base32!"}]}"#
+        #expect(VaultExport.importAutoDetect(badSecret) == .error("Invalid account \"E\": Secret key is not valid Base32"))
+
+        let badAlgorithm = #"{"schemaVersion":4,"services":[{"secret":"JBSWY3DPEHPK3PXP","name":"N","otp":{"algorithm":"MD5"}}]}"#
+        #expect(VaultExport.importAutoDetect(badAlgorithm) == .error("Invalid account \"N\": Unsupported algorithm"))
+
+        let badUri = "otpauth://totp/a?secret=!!!!&issuer=E"
+        #expect(VaultExport.importAutoDetect(badUri) == .error("Invalid account \"E\": Secret key is not valid Base32"))
+    }
+
+    @Test func importNormalisesSecrets() {
+        let spaced = #"{"format":"pstotp-plain","entries":[{"issuer":"E","accountName":"a","secret":"jbsw y3dp ehpk 3pxp"}]}"#
+        #expect(VaultExport.importAutoDetect(spaced) == .success([
+            VaultEntryPlaintext(issuer: "E", accountName: "a", secret: "JBSWY3DPEHPK3PXP")]))
+    }
+
+    @Test func encryptedImportRejectsInvalidEntries() throws {
+        let bad = [VaultEntry(id: "1", issuer: "E", accountName: "a", secret: "JBSWY3DPEHPK3PXP", period: 0)]
+        let json = try VaultExport.exportEncrypted(entries: bad, password: "pw")
+        #expect(throws: EntryValidationError.periodInvalid) { try VaultExport.importEncrypted(json, password: "pw") }
+    }
+
+    /// The vault payload and the export share one JSON shape, so an empty icon means "no icon" in both.
+    @Test func emptyIconImportsAsNoIcon() {
+        let json = #"{"format":"pstotp-plain","entries":[{"issuer":"E","accountName":"a","secret":"JBSWY3DPEHPK3PXP","icon":""}]}"#
+        #expect(VaultExport.importAutoDetect(json) == .success([
+            VaultEntryPlaintext(issuer: "E", accountName: "a", secret: "JBSWY3DPEHPK3PXP", icon: nil)]))
+    }
+
     private struct Wrapper: Encodable {
         let version: Int, format: String, salt: String, ciphertext: String, nonce: String
         init(_ e: Vectors.EncryptedExport) {
