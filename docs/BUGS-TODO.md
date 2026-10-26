@@ -30,6 +30,18 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
 - [ ] **Test gap: `OtpauthUri.parse` has no tests** — it depends on `android.net.Uri`, so it can't run as a pure-JVM
   test. Only `resolveLabel` is covered (`OtpauthUriLabelTest`), and that test was **never run** (no JDK on the
   machine it was written on) — run `./gradlew :core:test`.
+- [ ] **QR scanner stops for good after one rejected code (Suspected)** — `QrScanner.kt` sets `detected` with
+  `compareAndSet(false, true)` before calling `onResult`, and never resets it. If the code is then rejected
+  (an HOTP `otpauth://hotp/…`, a bad secret, an unsupported algorithm) the error is shown but the analyzer
+  ignores every later frame until the user leaves and re-enters the tab. Fix: reset `detected` on failure
+  (or debounce like iOS's `ScanDebouncer`).
+- [ ] **Photo import only inspects the first barcode (Suspected)** — `ImagePickTab` takes
+  `barcodes.firstNotNullOfOrNull { it.rawValue }` and only then checks for `otpauth://`, so an image whose first
+  detected code is something else (a URL QR next to the account QR) reports "No QR code found in image".
+  Fix: pick the first barcode whose value starts with `otpauth://`.
+- [ ] **Gap: scanning ignores Google's `otpauth-migration://` QR codes** — file/URI import supports them
+  (`ExternalImports.tryParseGoogleAuthMigration`) but both the camera and image paths drop anything not starting
+  with `otpauth://`. Users exporting from Google Authenticator get a QR code, not a file. Enhancement, all clients.
 - [ ] **Card doesn't show the account name (UX)** — `TotpCard` shows only the issuer, so several accounts at one
   issuer are indistinguishable in the list. (iOS shows the account name as a caption.)
 

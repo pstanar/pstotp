@@ -28,6 +28,11 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 13 | Version numbers | `versionName` = `git describe --tags --dirty=-dirty` minus `v`; `versionCode` = 1. | Same label in `PsTotpVersionLabel`; `CFBundleShortVersionString` = numeric tag only; `CFBundleVersion` = commit count. | The App Store requires a numeric short version and an increasing build number. | platform | |
 | 14 | Argon2 execution | Caller decides which dispatcher. | Setup/unlock run Argon2 on a detached task so the UI thread never blocks. | Responsiveness. | internal | |
 | 15 | Local database | Room. | GRDB (same schema, v3 columns). | Native choice; schema is intentionally identical. | internal | |
+| 16 | Scanner after a rejected code | Scanner stops permanently after the first detected `otpauth://` code, even when the app then rejects it (see `docs/BUGS-TODO.md`). | Keeps scanning; the same code is debounced for 2 s (`ScanDebouncer`), so a bad code shows its error without stranding the user. | Recovery without leaving the tab. | behaviour (fixes an Android bug) | |
+| 17 | Photo with several QR codes | Only the first detected barcode is checked for `otpauth://`. | The first `otpauth://` code among all detected codes is used. | A non-account QR next to the account QR shouldn't hide it. | behaviour (fixes an Android bug) | |
+| 18 | Camera permission denied | Shows "Camera permission required" with a Grant button that re-requests. | iOS only prompts once, so the denied state explains and offers "Open Settings". No-camera devices (simulator) get their own message. | Platform permission model. | platform | |
+| 19 | QR display | `AlertDialog`, ZXing at the default error-correction level. | Sheet with a "keep it private" note; CoreImage at level M with a 4-module quiet zone, rendered with whole pixels per module. | Native presentation; the extra note is because the code reveals the secret. | cosmetic | |
+| 20 | Photo picking | Photo picker via activity result. | System `PhotosPicker` (no photo-library permission needed); EXIF orientation honoured and huge photos bounded to 4096 px before decoding. | Platform picker; protects memory. | platform | |
 
 ## Same result, but written explicitly (not differences)
 
@@ -35,10 +40,12 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
   The id is the AES-GCM associated data and the server GUID; Android and web generate lowercase.
 - **Otpauth label rule** — `resolveLabel` / `resolveOtpauthLabel` are now identical on all three clients
   (commit `2cefecd`).
+- **Scanning only accepts `otpauth://`** — same as Android; Google's `otpauth-migration://` QR codes are imported
+  from a file / pasted URI, not scanned (logged as a gap in `docs/BUGS-TODO.md`).
 - **Stable sort** — iOS breaks ties explicitly by incoming order; Kotlin's `sortedBy` is stable already.
 
 ## Not ported yet (pending, not differences)
 
-QR scanning and QR display, grid layout, edit screen, drag-to-reorder, settings (lock timeout, layout,
+grid layout, edit screen, drag-to-reorder, settings (lock timeout, layout,
 import/export UI, change password), biometric unlock, icon picker / icon library, "next code" preview,
 connected mode (server sync, passkeys, devices, audit, recovery).
