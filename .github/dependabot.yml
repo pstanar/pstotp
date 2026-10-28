@@ -1,0 +1,27 @@
+# Alerts only: open-pull-requests-limit: 0 disables version-update PRs.
+# Dependabot security alerts are driven by the dependency graph and don't need this file.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /client/android
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: npm
+    directory: /client/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
