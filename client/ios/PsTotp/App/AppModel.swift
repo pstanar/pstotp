@@ -229,6 +229,95 @@ final class AppModel {
         persist(SettingsKeys.lockTimeoutMs, String(timeout.millis))
     }
 
+    // MARK: Import & export
+
+    enum ImportPreparation {
+        /// Ready for the user to confirm, duplicates flagged.
+        case ready([ImportCandidate])
+        /// An encrypted PsTotp export: ask for its password and call `prepareImport` again.
+        case needsPassword
+        case failed(String)
+    }
+
+    /// (done, total) while imported icons are being downloaded / normalised; nil otherwise.
+    private(set) var importIconProgress: (done: Int, total: Int)?
+
+    enum ExportOutcome {
+        case file(String)
+        case failed(String)
+    }
+
+    /// The vault's contents in `format`, or a message for the user.
+    func exportVault(format: ExportFormat, password: String) async -> ExportOutcome {
+        if format.needsPassword && password.isEmpty { return .failed("Password required") }
+        let entries = entries
+        do {
+            // Encrypted export runs Argon2: keep it off the main actor.
+            return .file(try await Task.detached(priority: .userInitiated) {
+                try format.export(entries: entries, password: password)
+            }.value)
+        } catch {
+            return .failed("Export failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Parse an import file (decrypting it when `password` is given), resolve its icons and match
+    /// it against the vault, as Android's `prepareImport` does.
+    func prepareImport(_ content: String, password: String? = nil) async -> ImportPreparation {
+        let parsed: [VaultEntryPlaintext]
+        if let password {
+            do {
+                parsed = try await Task.detached(priority: .userInitiated) {
+                    try VaultExport.importEncrypted(content, password: password)
+                }.value
+            } catch VaultExport.ExportError.wrongPasswordOrCorrupt {
+                return .failed("Wrong password, or the file is damaged")
+            } catch {
+                return .failed("Import failed: \(error)")
+            }
+        } else {
+            switch VaultExport.importAutoDetect(content) {
+            case .success(let entries): parsed = entries
+            case .needsPassword: return .needsPassword
+            case .error(let message): return .failed(message)
+            }
+        }
+
+        let iconCount = ImportIcons.pendingCount(parsed)
+        if iconCount > 0 { importIconProgress = (0, iconCount) }
+        let resolved = await ImportIcons.resolve(parsed, fetch: Self.fetchIcon) { done, total in
+            await MainActor.run { self.importIconProgress = (done, total) }
+        }
+        importIconProgress = nil
+        return .ready(ImportCandidate.buildCandidates(imported: resolved, existing: entries))
+    }
+
+    /// Write the confirmed import in one transaction and reload the vault.
+    /// - Returns: nil on success, otherwise a message for the user.
+    func confirmImport(_ candidates: [ImportCandidate]) async -> String? {
+        guard let key = vaultKey else { return "Vault is locked" }
+        let plan = ImportCandidate.plan(candidates, existing: entries)
+        do {
+            try await repository.importEntries(vaultKey: key, plan: plan)
+            entries = try await repository.getAllEntries(vaultKey: key)
+            sortUsage = usage
+            showToast("Imported \(plan.count) entries")   // Android's wording
+            return nil
+        } catch {
+            return "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Icon downloads use Android's 5 s timeouts.
+    private static let fetchIcon: ImportIcons.Fetch = { url in
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+        else { return nil }
+        return data
+    }
+
     /// Writes that the UI fires and forgets (settings, reordering) run strictly in the order they
     /// were issued, so two quick changes can't land swapped.
     private func enqueue(_ work: @escaping @MainActor () async -> Void) {

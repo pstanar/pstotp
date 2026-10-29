@@ -9,6 +9,7 @@ struct VaultView: View {
     @State private var qrEntry: VaultEntry?
     @State private var editingEntry: VaultEntry?
     @State private var editMode: EditMode = .inactive
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -35,8 +36,12 @@ struct VaultView: View {
                             .fontWeight(.semibold)
                             .accessibilityIdentifier("vault.done")
                     } else {
-                        Button("Lock", systemImage: "lock") { model.lock() }
-                            .accessibilityIdentifier("vault.lock")
+                        HStack {
+                            Button("Lock", systemImage: "lock") { model.lock() }
+                                .accessibilityIdentifier("vault.lock")
+                            Button("Settings", systemImage: "gearshape") { showingSettings = true }
+                                .accessibilityIdentifier("vault.settings")
+                        }
                     }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -48,6 +53,7 @@ struct VaultView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Palette.background)
+            .navigationDestination(isPresented: $showingSettings) { SettingsView(model: model) }
         }
         .sheet(isPresented: $showingAdd) { AddAccountView(model: model) }
         .sheet(item: $qrEntry) { QRCodeSheet(entry: $0) }

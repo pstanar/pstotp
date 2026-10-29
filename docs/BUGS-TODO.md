@@ -25,6 +25,10 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   Fix: wrap in `db.withTransaction`. (Fixed on iOS.)
 - [ ] **`reorderEntries` / `deleteEntry` not transactional** — N separate `updateSortOrder` statements; a crash
   mid-loop leaves a half-applied order. Low severity.
+- [ ] **File import is not transactional** (Verified by reading) — `VaultViewModel.confirmImport` calls
+  `updateEntry` / `addEntry` once per candidate; an exception part-way leaves some accounts imported and
+  shows only "Import failed". Low severity. Fix: one transaction for the whole import. (Done on iOS:
+  `VaultRepository.importEntries`.)
 - [ ] **Google migration URI: `+` becomes a space** — `ExternalImports.tryParseGoogleAuthMigration` runs the
   `data=` value through `URLDecoder.decode`, which turns a literal `+` (a valid base64 digit) into a space,
   so base64 decoding fails. Google's own export percent-encodes `+`, so this only bites hand-edited or

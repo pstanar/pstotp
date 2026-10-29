@@ -46,9 +46,15 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 - **Scanning only accepts `otpauth://`** — same as Android; Google's `otpauth-migration://` QR codes are imported
   from a file / pasted URI, not scanned (logged as a gap in `docs/BUGS-TODO.md`).
 - **Stable sort** — iOS breaks ties explicitly by incoming order; Kotlin's `sortedBy` is stable already.
+| 24 | Applying a file import | `confirmImport` adds/updates entries one by one; a failure part-way leaves a partial import. | One DB transaction (`VaultRepository.importEntries`): all or nothing. Overwrites skip entries deleted while the preview was open. | No half-imported vault. | internal (fixes an Android weakness) | |
+| 25 | Wrong password on an encrypted import | "Import failed: <exception message>". | "Wrong password, or the file is damaged". | The AES-GCM exception text means nothing to a user. | cosmetic | |
+| 26 | Settings → Appearance | "Use system colors" (Material You) switch on Android 12+, otherwise "Using PsTotp brand colors". | No Appearance section yet; "Show upcoming code" will appear there with the next-code slice. | iOS has no wallpaper-derived palette. | platform | |
+| 27 | Settings presentation | One scrolling column; auto-lock as a dropdown; export format as chips in a dialog; import preview / password as dialogs; version as "PsTotp v…". | Grouped `Form` pushed from a gear button next to Lock; auto-lock as a menu picker; export and import preview as sheets; encrypted-import password as an alert; version as a "Version" row. | Native iOS controls. | cosmetic | |
 
 ## Not ported yet (pending, not differences)
 
-icon editing (the Edit screen keeps the current icon; changing it comes with the icon picker), settings (lock timeout, layout,
-import/export UI, change password), biometric unlock, icon picker / icon library, "next code" preview,
-connected mode (server sync, passkeys, devices, audit, recovery).
+icon editing (the Edit screen keeps the current icon; changing it comes with the icon picker), biometric unlock (and its
+Settings switch), icon picker / icon library (and the import preview's "Add icons to My Icons" checkbox and icon summary
+in the import toast), "next code" preview (and its Settings switch), connected mode (server sync, passkeys, devices,
+audit, recovery; Settings' "Connect to Server" and the connected-only Change Password, Devices, Audit Log, Passkeys,
+Recovery Codes buttons).

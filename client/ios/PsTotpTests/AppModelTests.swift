@@ -351,4 +351,88 @@ struct AppModelTests {
         model.scenePhaseChanged(.active, now: t0.addingTimeInterval(86_400 * 30))
         #expect(model.phase == .unlocked)
     }
+
+    // MARK: Import & export
+
+    private func unlocked(with issuers: [String] = []) async -> AppModel {
+        let model = await started()
+        _ = await model.setupPassword(strong, confirm: strong)
+        for issuer in issuers { _ = await model.addEntry(plain(issuer)) }
+        return model
+    }
+
+    @Test func plainExportImportsBackAsDuplicatesThatCanBeOverwrittenOrCopied() async throws {
+        let model = await unlocked(with: ["GitHub", "Slack"])
+        guard case .file(let file) = await model.exportVault(format: .plain, password: "") else {
+            Issue.record("export failed"); return
+        }
+
+        guard case .ready(var candidates) = await model.prepareImport(file) else {
+            Issue.record("import not ready"); return
+        }
+        #expect(candidates.count == 2 && candidates.allSatisfy(\.isDuplicate))
+        #expect(candidates.map(\.action) == [.overwrite, .overwrite])
+
+        candidates[1].action = .addCopy
+        #expect(await model.confirmImport(candidates) == nil)
+        #expect(model.entries.map(\.issuer) == ["GitHub", "Slack", "Slack"])
+        #expect(model.entries.map(\.accountName) == ["me", "me", "me (2)"])
+        #expect(model.toast == "Imported 2 entries")
+    }
+
+    @Test func encryptedExportNeedsItsPasswordToImport() async throws {
+        let model = await unlocked(with: ["GitHub"])
+        guard case .failed(let message) = await model.exportVault(format: .encrypted, password: "") else {
+            Issue.record("exported without a password"); return
+        }
+        #expect(message == "Password required")
+        guard case .file(let file) = await model.exportVault(format: .encrypted, password: "pw") else {
+            Issue.record("export failed"); return
+        }
+
+        guard case .needsPassword = await model.prepareImport(file) else { Issue.record("no password asked"); return }
+        guard case .failed(let wrong) = await model.prepareImport(file, password: "nope") else {
+            Issue.record("wrong password accepted"); return
+        }
+        #expect(wrong == "Wrong password, or the file is damaged")
+        guard case .ready(let candidates) = await model.prepareImport(file, password: "pw") else {
+            Issue.record("right password rejected"); return
+        }
+        #expect(candidates.map(\.imported.issuer) == ["GitHub"])
+    }
+
+    @Test func unreadableFilesAndInvalidAccountsFailWithAMessage() async {
+        let model = await unlocked()
+        guard case .failed(let unknown) = await model.prepareImport("hello") else { Issue.record(); return }
+        #expect(unknown == "Unrecognized file format")
+        guard case .failed(let badUri) = await model.prepareImport("otpauth://totp/Bad?secret=JBSWY3DPEHPK3PXP&digits=2")
+        else { Issue.record(); return }
+        #expect(badUri == "Invalid otpauth URI: Digits must be between 4 and 10")
+        guard case .failed(let invalid) = await model.prepareImport("otpauth://totp/Bad?secret=1111") else {
+            Issue.record(); return
+        }
+        #expect(invalid == "Invalid account \"Bad\": Secret key is not valid Base32")
+        #expect(model.entries.isEmpty)
+    }
+
+    @Test func importedEntriesAreAppendedAndKeptAcrossRelaunch() async throws {
+        let model = await unlocked(with: ["GitHub"])
+        guard case .ready(let candidates) = await model.prepareImport(
+            "otpauth://totp/AWS:root?secret=JBSWY3DPEHPK3PXP\notpauth://totp/Okta:me?secret=JBSWY3DPEHPK3PXP")
+        else { Issue.record(); return }
+        #expect(await model.confirmImport(candidates) == nil)
+
+        let relaunch = await started()
+        #expect(await relaunch.unlock(password: strong))
+        #expect(relaunch.entries.map(\.issuer) == ["GitHub", "AWS", "Okta"])
+    }
+
+    @Test func importIsRefusedWhileLocked() async {
+        let model = await unlocked()
+        guard case .ready(let candidates) = await model.prepareImport("otpauth://totp/AWS:root?secret=JBSWY3DPEHPK3PXP")
+        else { Issue.record(); return }
+        model.lock()
+        #expect(await model.confirmImport(candidates) == "Vault is locked")
+    }
 }
+

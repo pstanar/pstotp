@@ -286,6 +286,37 @@ final class PsTotpUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Reorder Accounts"].exists, "reordering is for the manual order only")
     }
 
+    func testSettingsAutoLockPersistsAndExportSheetGuardsThePassword() {
+        createVault()
+        app.buttons["vault.settings"].tap()
+        let autoLock = app.buttons["settings.autoLock"]
+        XCTAssertTrue(autoLock.waitForExistence(timeout: 5))
+        XCTAssertTrue(autoLock.label.contains("5 minutes"), autoLock.label)
+        autoLock.tap()
+        app.buttons["1 hour"].firstMatch.tap()
+        XCTAssertTrue(autoLock.label.contains("1 hour"), autoLock.label)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.version"].exists)
+
+        // Leave and come back: the choice sticks.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["vault.settings"].tap()
+        XCTAssertTrue(app.buttons["settings.autoLock"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings.autoLock"].label.contains("1 hour"))
+
+        // Export: encrypted needs a password; plain formats warn about visible secrets.
+        app.buttons["settings.export"].tap()
+        let confirm = app.buttons["export.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertFalse(confirm.isEnabled)
+        type("pw", into: "export.password")
+        XCTAssertTrue(confirm.isEnabled)
+        app.buttons["Plain JSON"].tap()
+        XCTAssertTrue(app.staticTexts["TOTP secrets will be visible in the file."].waitForExistence(timeout: 5))
+        XCTAssertTrue(confirm.isEnabled)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["settings.import"].waitForExistence(timeout: 5))
+    }
+
     func testScanTabExplainsAMissingCameraOnTheSimulator() throws {
         #if targetEnvironment(simulator)
         createVault()
