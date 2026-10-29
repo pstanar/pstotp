@@ -116,6 +116,42 @@ public final class VaultRepository: Sendable {
         }
     }
 
+    /// Apply a confirmed import in one transaction: overwrite `plan.updates` (entries deleted in the
+    /// meantime are skipped) and append `plan.additions` after the current last entry. Either all of it
+    /// lands or none of it does.
+    public func importEntries(vaultKey: Data, plan: ImportPlan) async throws {
+        let timestamp = now()
+        let updates = try plan.updates.map {
+            ($0.id, try Self.encryptPayload(vaultKey: vaultKey, id: $0.id, plaintext: $0.plaintext))
+        }
+        let additions = try plan.additions.map { plaintext in
+            let id = UUID().uuidString.lowercased()   // lowercase: see addEntry
+            return (id, try Self.encryptPayload(vaultKey: vaultKey, id: id, plaintext: plaintext))
+        }
+
+        try await db.writer.write { db in
+            let connected = try SettingsQueries.get(db, SettingsKeys.mode) == SettingsKeys.modeConnected
+            for (id, encrypted) in updates {
+                guard var existing = try VaultEntryQueries.byId(db, id), existing.deletedAt == nil else { continue }
+                existing.encryptedPayload = encrypted
+                existing.updatedAt = timestamp
+                existing.pendingSync = connected
+                try VaultEntryQueries.upsert(db, existing)
+            }
+            var sortOrder = (try VaultEntryQueries.maxSortOrder(db) ?? -1) + 1
+            for (id, encrypted) in additions {
+                try VaultEntryQueries.upsert(db, VaultEntryRecord(
+                    id: id,
+                    encryptedPayload: encrypted,
+                    sortOrder: sortOrder,
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                    pendingSync: connected))
+                sortOrder += 1
+            }
+        }
+    }
+
     /// Soft-delete (so the deletion can sync) and forget local usage stats.
     public func deleteEntry(id: String) async throws {
         let timestamp = now()

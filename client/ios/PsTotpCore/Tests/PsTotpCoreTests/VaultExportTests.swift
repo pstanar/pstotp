@@ -140,6 +140,9 @@ struct VaultExportTests {
 
         let badUri = "otpauth://totp/a?secret=!!!!&issuer=E"
         #expect(VaultExport.importAutoDetect(badUri) == .error("Invalid account \"E\": Secret key is not valid Base32"))
+
+        let noIssuer = "otpauth://totp/alice?secret=!!!!"
+        #expect(VaultExport.importAutoDetect(noIssuer) == .error("Invalid account \"alice\": Secret key is not valid Base32"))
     }
 
     @Test func importNormalisesSecrets() {

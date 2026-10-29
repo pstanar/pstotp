@@ -70,7 +70,11 @@ public enum VaultExport {
         var valid = [VaultEntryPlaintext]()
         for entry in entries {
             do { valid.append(try EntryValidation.validated(entry)) }
-            catch { return .error("Invalid account \"\(entry.issuer)\": \(error)") }
+            catch {
+                // An issuer-less entry (an otpauth label without a colon) is named by its account.
+                let name = entry.issuer.isEmpty ? entry.accountName : entry.issuer
+                return .error("Invalid account \"\(name)\": \(error)")
+            }
         }
         return .success(valid)
     }
@@ -163,6 +167,35 @@ public enum VaultExport {
             guard let obj = element as? JSONObject, let plaintext = VaultEntryPlaintext(json: obj)
             else { throw ExportError.malformedEncryptedExport }
             return plaintext
+        }
+    }
+}
+
+/// The export formats offered in Settings, as on Android.
+public enum ExportFormat: CaseIterable, Sendable {
+    case encrypted, plain, otpauth
+
+    public var label: String {
+        switch self {
+        case .encrypted: "Encrypted"
+        case .plain: "Plain JSON"
+        case .otpauth: "otpauth:// URIs"
+        }
+    }
+
+    /// Plain formats put the TOTP secrets in the file in the clear.
+    public var revealsSecrets: Bool { self != .encrypted }
+
+    public var needsPassword: Bool { self == .encrypted }
+
+    public var fileName: String { self == .otpauth ? "pstotp-export.txt" : "pstotp-export.json" }
+
+    /// The file's contents. Encrypted runs Argon2: call it off the main actor.
+    public func export(entries: [VaultEntry], password: String) throws -> String {
+        switch self {
+        case .encrypted: try VaultExport.exportEncrypted(entries: entries, password: password)
+        case .plain: try VaultExport.exportPlain(entries: entries)
+        case .otpauth: VaultExport.exportOtpauthUris(entries: entries)
         }
     }
 }

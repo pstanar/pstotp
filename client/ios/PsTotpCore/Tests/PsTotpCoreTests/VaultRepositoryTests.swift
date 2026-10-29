@@ -277,6 +277,45 @@ struct VaultRepositoryTests {
         #expect(try await repo.getAllUsage() == [EntryUsageRecord(entryId: e.id, lastUsedAt: 222, useCount: 2)])
     }
 
+    // MARK: Import
+
+    @Test func importOverwritesAndAppendsInOneGo() async throws {
+        clock.set(1_000)
+        let kept = try await repo.addEntry(vaultKey: key, plaintext: plain("GitHub", "octocat"))
+        let other = try await repo.addEntry(vaultKey: key, plaintext: plain("Slack"))
+        var overwritten = kept
+        overwritten.secret = "GEZDGNBVGY3TQOJQ"
+        overwritten.icon = "🐙"
+
+        clock.set(2_000)
+        try await repo.importEntries(vaultKey: key, plan: ImportPlan(
+            updates: [overwritten], additions: [plain("AWS"), plain("GitHub", "octocat (2)")]))
+
+        let all = try await repo.getAllEntries(vaultKey: key)
+        #expect(all.map(\.issuer) == ["GitHub", "Slack", "AWS", "GitHub"])
+        #expect(all.map(\.sortOrder) == [0, 1, 2, 3])
+        #expect(all[0] == overwritten)
+        #expect(all[1] == other)
+        #expect(all[3].accountName == "octocat (2)")
+        #expect(all.allSatisfy { $0.id == $0.id.lowercased() })
+        let record = try #require(try await rawRecord(kept.id))
+        #expect(record.updatedAt == 2_000 && record.createdAt == 1_000)
+        #expect(record.pendingSync == false)   // standalone
+    }
+
+    @Test func importSkipsUpdatesForEntriesThatAreGone() async throws {
+        clock.set(1_000)
+        var gone = try await repo.addEntry(vaultKey: key, plaintext: plain("Gone"))
+        try await repo.deleteEntry(id: gone.id)
+        let before = try #require(try await rawRecord(gone.id))
+        gone.secret = "GEZDGNBVGY3TQOJQ"
+
+        clock.set(2_000)
+        try await repo.importEntries(vaultKey: key, plan: ImportPlan(updates: [gone], additions: []))
+        #expect(try await repo.getAllEntries(vaultKey: key).isEmpty)
+        #expect(try await rawRecord(gone.id) == before)   // the tombstone is untouched
+    }
+
     // MARK: Observation
 
     @Test func observationEmitsOnChanges() async throws {
