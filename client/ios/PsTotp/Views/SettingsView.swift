@@ -19,6 +19,16 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Show upcoming code", isOn: Binding(get: { model.showNextCode }, set: model.setShowNextCode))
+                    .accessibilityIdentifier("settings.showNextCode")
+            } header: {
+                Text("Appearance")
+            } footer: {
+                Text("In the last 10s, preview the next code; tap in the last 3s to copy it.")
+            }
+            .listRowBackground(Palette.surface)
+
             if let biometry = model.biometry {
                 Section {
                     Toggle(isOn: Binding(get: { model.biometricEnabled }, set: setBiometrics)) {

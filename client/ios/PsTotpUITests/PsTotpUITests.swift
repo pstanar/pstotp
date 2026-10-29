@@ -317,6 +317,27 @@ final class PsTotpUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings.import"].waitForExistence(timeout: 5))
     }
 
+    func testUpcomingCodeIsPreviewedNearTheEndOfThePeriod() throws {
+        createVault()
+        app.buttons["vault.settings"].tap()
+        let toggle = app.switches["settings.showNextCode"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.switches.firstMatch.tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        app.navigationBars.buttons["BackButton"].tap()
+
+        addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")
+        // The preview only shows in the last 10 s of the 30 s period.
+        let next = app.descendants(matching: .any)["code.next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 32))
+        XCTAssertTrue(next.label.hasPrefix("Next code "))
+        if let dir = ProcessInfo.processInfo.environment["PSTOTP_SHOTS"] {
+            try app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/next-code-list.png"))
+        }
+        // …and is gone once the new period starts.
+        XCTAssertTrue(next.waitForNonExistence(timeout: 12))
+    }
+
     func testScanTabExplainsAMissingCameraOnTheSimulator() throws {
         #if targetEnvironment(simulator)
         createVault()

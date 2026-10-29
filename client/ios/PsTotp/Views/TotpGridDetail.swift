@@ -6,13 +6,15 @@ import SwiftUI
 /// The whole panel is tappable (not just the button), like the list rows.
 struct TotpGridDetail: View {
     let entry: VaultEntry
-    let onCopy: (String) -> Void
+    let showNextCode: Bool
+    /// Copy whatever the entry hands out right now (the owner decides current vs next).
+    let onCopy: () -> Void
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let now = Int64(context.date.timeIntervalSince1970)
-            let code = entry.code(at: now)
-            let timeLeft = TotpGenerator.timeRemaining(period: entry.period, now: now)
+            let live = LiveCode(entry: entry, now: Int64(context.date.timeIntervalSince1970))
+            let code = live.code
+            let timeLeft = live.timeLeft
 
             VStack(spacing: 0) {
                 CountdownRing(period: entry.period, size: 72, lineWidth: 3) {
@@ -38,6 +40,11 @@ struct TotpGridDetail: View {
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
 
+                if let next = live.preview(enabled: showNextCode) {
+                    NextCodeText(code: next, size: 20)
+                        .padding(.top, 8)
+                }
+
                 HStack {
                     Color.clear.frame(width: 40, height: 1)          // balances the copy button
                     Text("Your token expires in \(timeLeft)s")
@@ -46,7 +53,7 @@ struct TotpGridDetail: View {
                         .monospacedDigit()
                         .frame(maxWidth: .infinity)
                     Button {
-                        if let code { onCopy(code) }
+                        if code != nil { onCopy() }
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .frame(width: 40, height: 40)
@@ -62,7 +69,7 @@ struct TotpGridDetail: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
-            .onTapGesture { if let code { onCopy(code) } }
+            .onTapGesture { if code != nil { onCopy() } }
             .accessibilityElement(children: .contain)
         }
         .accessibilityIdentifier("grid.detail")

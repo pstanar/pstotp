@@ -18,7 +18,7 @@ struct VaultGridView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let selected {
-                TotpGridDetail(entry: selected) { model.copyCode($0, for: selected) }
+                TotpGridDetail(entry: selected, showNextCode: model.showNextCode) { model.copyCode(of: selected) }
                     .id(selected.id)                       // fresh ring/code state per entry
                 Divider().overlay(Palette.outline)
             }

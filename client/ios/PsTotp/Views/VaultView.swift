@@ -80,7 +80,8 @@ struct VaultView: View {
             ForEach(shown) { entry in
                 TotpCard(
                     entry: entry,
-                    onCopyCode: { model.copyCode($0, for: entry) },
+                    showNextCode: model.showNextCode,
+                    onCopyCode: { model.copyCode(of: entry) },
                     onCopySecret: { model.copySecret(of: entry) },
                     onShowQR: { qrEntry = entry },
                     onEdit: { editingEntry = entry },

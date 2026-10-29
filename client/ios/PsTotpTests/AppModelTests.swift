@@ -1,6 +1,7 @@
 import Foundation
 import PsTotpCore
 import SwiftUI
+import UIKit
 import Testing
 @testable import PsTotp
 
@@ -434,6 +435,33 @@ struct AppModelTests {
         else { Issue.record(); return }
         model.lock()
         #expect(await model.confirmImport(candidates) == "Vault is locked")
+    }
+
+    // MARK: Upcoming code
+
+    @Test func showNextCodeDefaultsOffAndPersists() async {
+        let model = await started()
+        #expect(model.showNextCode == false)
+        model.setShowNextCode(true)
+        await model.waitForPendingWrites()
+        #expect(await started().showNextCode)
+    }
+
+    @Test func copyHandsOutTheNextCodeOnlyInTheLastSecondsWhenEnabled() async throws {
+        let model = await unlocked(with: ["GitHub"])
+        let entry = try #require(model.entries.first)
+        let lastSeconds = Date(timeIntervalSince1970: 59_999_998)     // 2 s left in the step
+        let midStep = Date(timeIntervalSince1970: 59_999_980)         // 20 s left
+
+        model.copyCode(of: entry, now: lastSeconds)
+        #expect(model.toast?.hasPrefix("Code copied") == true)
+
+        model.setShowNextCode(true)
+        model.copyCode(of: entry, now: midStep)
+        #expect(model.toast?.hasPrefix("Code copied") == true)
+        model.copyCode(of: entry, now: lastSeconds)
+        #expect(model.toast?.hasPrefix("Next code copied") == true)
+        #expect(UIPasteboard.general.string == entry.code(at: 60_000_000 + 2))   // the next step's code
     }
 
     // MARK: Biometric unlock

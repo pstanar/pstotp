@@ -16,6 +16,8 @@ final class AppModel {
     private(set) var sortReversed = false
     private(set) var layoutMode: LayoutMode = .list
     private(set) var lockTimeout: LockTimeout = .fiveMinutes
+    /// Preview the next code near the end of each period, and copy it in the last seconds.
+    private(set) var showNextCode = false
     /// The device's enrolled biometry (nil: none), read at startup.
     private(set) var biometry: BiometryKind?
     /// The user turned biometric unlock on and the key is still stored.
@@ -53,6 +55,7 @@ final class AppModel {
             sortMode = SortMode.fromStorageKey(try await repository.getSetting(SettingsKeys.sortMode))
             sortReversed = try await repository.getSetting(SettingsKeys.sortReversed) == "true"
             layoutMode = LayoutMode.fromStorageKey(try await repository.getSetting(SettingsKeys.layoutMode))
+            showNextCode = try await repository.getSetting(SettingsKeys.showNextCode) == "true"
             lockTimeout = LockTimeout.fromMillis(
                 try await repository.getSetting(SettingsKeys.lockTimeoutMs).flatMap { Int64($0) })
             try await loadUsage()
@@ -270,6 +273,11 @@ final class AppModel {
         persist(SettingsKeys.layoutMode, mode.rawValue)
     }
 
+    func setShowNextCode(_ show: Bool) {
+        showNextCode = show
+        persist(SettingsKeys.showNextCode, String(show))
+    }
+
     func setLockTimeout(_ timeout: LockTimeout) {
         lockTimeout = timeout
         persist(SettingsKeys.lockTimeoutMs, String(timeout.millis))
@@ -444,9 +452,13 @@ final class AppModel {
         }
     }
 
-    func copyCode(_ code: String, for entry: VaultEntry) {
-        Clipboard.copy(code)
-        showToast("Code copied — clears in \(Int(Clipboard.clearAfter))s")
+    /// Copy what a tap on `entry` hands out right now: the current code, or the next one in the last
+    /// seconds when "Show upcoming code" is on.
+    func copyCode(of entry: VaultEntry, now: Date = Date()) {
+        guard let pick = LiveCode(entry: entry, now: Int64(now.timeIntervalSince1970))
+            .toCopy(showNextCode: showNextCode) else { return }
+        Clipboard.copy(pick.code)
+        showToast("\(pick.isNext ? "Next code" : "Code") copied — clears in \(Int(Clipboard.clearAfter))s")
         Task { await recordUse(of: entry) }
     }
 

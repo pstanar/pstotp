@@ -2,10 +2,13 @@ import PsTotpCore
 import SwiftUI
 
 /// One vault row: service icon in a countdown ring, issuer, account, and the live code.
-/// Tapping anywhere copies the code (Authy-style), like the Android card.
+/// Tapping anywhere copies the code (Authy-style), like the Android card. With "Show upcoming code"
+/// on, the next code is previewed in the last seconds (see `LiveCode`).
 struct TotpCard: View {
     let entry: VaultEntry
-    let onCopyCode: (String) -> Void
+    let showNextCode: Bool
+    /// Copy whatever the entry hands out right now (the owner decides current vs next).
+    let onCopyCode: () -> Void
     let onCopySecret: () -> Void
     let onShowQR: () -> Void
     let onEdit: () -> Void
@@ -16,9 +19,9 @@ struct TotpCard: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let now = Int64(context.date.timeIntervalSince1970)
-            let code = entry.code(at: now)
-            let timeLeft = TotpGenerator.timeRemaining(period: entry.period, now: now)
+            let live = LiveCode(entry: entry, now: Int64(context.date.timeIntervalSince1970))
+            let code = live.code
+            let timeLeft = live.timeLeft
 
             HStack(spacing: 12) {
                 CountdownRing(period: entry.period, size: 48) {
@@ -46,6 +49,9 @@ struct TotpCard: View {
                                 .monospacedDigit()
                         }
                     }
+                    if let next = live.preview(enabled: showNextCode) {
+                        NextCodeText(code: next, size: 16)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -57,9 +63,9 @@ struct TotpCard: View {
             .padding(.horizontal, 12)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14))
             .contentShape(RoundedRectangle(cornerRadius: 14))
-            .onTapGesture { if !isReordering, let code { onCopyCode(code) } }
+            .onTapGesture { if !isReordering, code != nil { onCopyCode() } }
             .accessibilityElement(children: .contain)
-            .accessibilityAction(named: "Copy code") { if let code { onCopyCode(code) } }
+            .accessibilityAction(named: "Copy code") { if code != nil { onCopyCode() } }
         }
         .accessibilityIdentifier("card.\(entry.issuer)")
     }
