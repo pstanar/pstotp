@@ -41,6 +41,7 @@ targets:
         CFBundleDisplayName: PsTotp
         PsTotpVersionLabel: $(MARKETING_VERSION)
         NSCameraUsageDescription: PsTotp uses the camera to scan QR codes when adding accounts.
+        NSFaceIDUsageDescription: PsTotp uses Face ID to unlock your vault without your password.
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

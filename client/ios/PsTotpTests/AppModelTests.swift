@@ -8,10 +8,11 @@ import Testing
 @Suite("AppModel")
 struct AppModelTests {
     let db: AppDatabase
+    let biometrics = FakeBiometrics()
 
     init() throws { db = try AppDatabase.inMemory() }
 
-    private func makeModel() -> AppModel { AppModel(repository: VaultRepository(db: db)) }
+    private func makeModel() -> AppModel { AppModel(repository: VaultRepository(db: db), biometrics: biometrics) }
 
     private func started() async -> AppModel {
         let model = makeModel()
@@ -434,5 +435,112 @@ struct AppModelTests {
         model.lock()
         #expect(await model.confirmImport(candidates) == "Vault is locked")
     }
+
+    // MARK: Biometric unlock
+
+    @Test func biometricUnlockAfterEnablingSurvivesARelaunch() async throws {
+        let model = await unlocked(with: ["GitHub"])
+        #expect(model.biometry == .faceID && !model.canUnlockWithBiometrics)
+        #expect(await model.setBiometricEnabled(true) == nil)
+        #expect(model.biometricEnabled && biometrics.prompts == 1)
+
+        let relaunch = await started()
+        #expect(relaunch.phase == .locked && relaunch.canUnlockWithBiometrics)
+        #expect(await relaunch.unlockWithBiometrics())
+        #expect(relaunch.phase == .unlocked)
+        #expect(relaunch.entries.map(\.issuer) == ["GitHub"])
+    }
+
+    @Test func cancellingThePromptChangesNothing() async {
+        let model = await unlocked()
+        biometrics.nextPrompt = .failure(.cancelled)
+        #expect(await model.setBiometricEnabled(true) == nil)
+        #expect(!model.biometricEnabled && biometrics.storedKey == nil)
+
+        #expect(await model.setBiometricEnabled(true) == nil)
+        model.lock()
+        biometrics.nextPrompt = .failure(.cancelled)
+        #expect(await model.unlockWithBiometrics() == false)
+        #expect(model.phase == .locked && model.errorMessage == nil && model.biometricEnabled)
+    }
+
+    @Test func aFailedPromptIsReported() async {
+        let model = await unlocked()
+        biometrics.nextPrompt = .failure(.failed("Too many attempts"))
+        #expect(await model.setBiometricEnabled(true) == "Failed to enable biometric unlock: Too many attempts")
+        #expect(!model.biometricEnabled)
+    }
+
+    @Test func anInvalidatedKeyTurnsBiometricUnlockOff() async {
+        let model = await unlocked()
+        _ = await model.setBiometricEnabled(true)
+        model.lock()
+        biometrics.storedKey = nil          // enrollment changed: the Keychain item is unreadable
+        biometrics.reportsStoredKey = true  // …but still "there" without a prompt
+        #expect(await model.unlockWithBiometrics() == false)
+        #expect(!model.biometricEnabled && !model.canUnlockWithBiometrics)
+        #expect(model.errorMessage?.hasPrefix("Biometric unlock was turned off") == true)
+
+        let relaunch = await started()
+        #expect(!relaunch.canUnlockWithBiometrics)
+    }
+
+    @Test func turningOffRemovesTheKey() async {
+        let model = await unlocked()
+        _ = await model.setBiometricEnabled(true)
+        #expect(await model.setBiometricEnabled(false) == nil)
+        #expect(biometrics.storedKey == nil && !model.biometricEnabled)
+        #expect(await started().canUnlockWithBiometrics == false)
+    }
+
+    @Test func noSensorMeansNoBiometricUnlockEvenIfTurnedOnEarlier() async {
+        let model = await unlocked()
+        _ = await model.setBiometricEnabled(true)
+        biometrics.biometry = nil
+        let relaunch = await started()
+        #expect(relaunch.biometricEnabled && !relaunch.canUnlockWithBiometrics)
+        #expect(await relaunch.unlockWithBiometrics() == false)
+    }
+
+    @Test func aFreshInstallDropsAKeyLeftByAnEarlierOne() async {
+        biometrics.storedKey = Data(repeating: 7, count: 32)
+        _ = await started()                 // not set up
+        #expect(biometrics.storedKey == nil)
+    }
 }
 
+/// In-memory stand-in for the Keychain + LocalAuthentication store.
+final class FakeBiometrics: BiometricKeyStore, @unchecked Sendable {
+    var biometry: BiometryKind? = .faceID
+    var storedKey: Data?
+    /// Overrides `storedKey != nil` for `hasStoredKey` (an invalidated item still exists).
+    var reportsStoredKey: Bool?
+    /// The outcome of the next prompt; success by default.
+    var nextPrompt: Result<Void, BiometricError> = .success(())
+    private(set) var prompts = 0
+
+    func availableBiometry() -> BiometryKind? { biometry }
+    func hasStoredKey() -> Bool { reportsStoredKey ?? (storedKey != nil) }
+
+    func enroll(vaultKey: Data, reason: String) async throws {
+        try prompt()
+        storedKey = vaultKey
+    }
+
+    func loadVaultKey(reason: String) async throws -> Data? {
+        guard hasStoredKey() else { return nil }
+        try prompt()
+        return storedKey
+    }
+
+    func removeKey() {
+        storedKey = nil
+        reportsStoredKey = nil
+    }
+
+    private func prompt() throws {
+        prompts += 1
+        defer { nextPrompt = .success(()) }
+        try nextPrompt.get()
+    }
+}

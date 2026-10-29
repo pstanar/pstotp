@@ -16,6 +16,12 @@ final class AppModel {
     private(set) var sortReversed = false
     private(set) var layoutMode: LayoutMode = .list
     private(set) var lockTimeout: LockTimeout = .fiveMinutes
+    /// The device's enrolled biometry (nil: none), read at startup.
+    private(set) var biometry: BiometryKind?
+    /// The user turned biometric unlock on and the key is still stored.
+    private(set) var biometricEnabled = false
+    /// Offer the biometric prompt on the unlock screen.
+    var canUnlockWithBiometrics: Bool { biometricEnabled && biometry != nil }
 
     /// Shown on the setup / unlock screens.
     var errorMessage: String?
@@ -23,6 +29,7 @@ final class AppModel {
     private(set) var toast: String?
 
     private let repository: VaultRepository
+    private let biometrics: BiometricKeyStore
     private var vaultKey: Data?
     private var usage: [String: EntryUsageRecord] = [:]
     /// Usage as of the last (re)sort. Copying a code records usage but must not re-sort the list
@@ -32,8 +39,9 @@ final class AppModel {
     private var toastTask: Task<Void, Never>?
     private var writeQueue: Task<Void, Never>?
 
-    init(repository: VaultRepository) {
+    init(repository: VaultRepository, biometrics: BiometricKeyStore = KeychainBiometricKeyStore()) {
         self.repository = repository
+        self.biometrics = biometrics
     }
 
     // MARK: Startup
@@ -49,6 +57,15 @@ final class AppModel {
                 try await repository.getSetting(SettingsKeys.lockTimeoutMs).flatMap { Int64($0) })
             try await loadUsage()
             sortUsage = usage
+            biometry = biometrics.availableBiometry()
+            if setUp {
+                biometricEnabled = try await repository.getSetting(SettingsKeys.biometricEnabled) == "true"
+                    && biometrics.hasStoredKey()
+            } else {
+                // Keychain items outlive an uninstall; a key left by an earlier install belongs to a
+                // vault that no longer exists.
+                biometrics.removeKey()
+            }
             phase = setUp ? .locked : .needsSetup
         } catch {
             errorMessage = "Could not open the vault: \(error.localizedDescription)"
@@ -84,6 +101,35 @@ final class AppModel {
                 errorMessage = "Incorrect password"
                 return false
             }
+            return await finishUnlock(key: key)
+        } catch {
+            errorMessage = "Unlock failed: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// Unlock with the biometric copy of the vault key. A dismissed prompt is not an error.
+    /// - Returns: true when unlocked.
+    func unlockWithBiometrics() async -> Bool {
+        guard canUnlockWithBiometrics else { return false }
+        do {
+            guard let key = try await biometrics.loadVaultKey(reason: "Unlock PsTotp") else {
+                // The enrolled faces / fingers changed, so the key is gone for good.
+                await turnOffBiometrics()
+                errorMessage = "Biometric unlock was turned off because the enrolled \(biometry?.name ?? "biometrics") changed. Unlock with your password."
+                return false
+            }
+            return await finishUnlock(key: key)
+        } catch BiometricError.cancelled {
+            return false
+        } catch {
+            errorMessage = "Biometric unlock failed: \(Self.message(error))"
+            return false
+        }
+    }
+
+    private func finishUnlock(key: Data) async -> Bool {
+        do {
             // Decrypt before touching any state: a wrong-key failure must not leave the UI
             // "unlocked" with no entries.
             let decrypted = try await repository.getAllEntries(vaultKey: key)
@@ -227,6 +273,40 @@ final class AppModel {
     func setLockTimeout(_ timeout: LockTimeout) {
         lockTimeout = timeout
         persist(SettingsKeys.lockTimeoutMs, String(timeout.millis))
+    }
+
+    // MARK: Biometric unlock
+
+    /// Turn biometric unlock on (prompts, as on Android) or off.
+    /// - Returns: nil on success or a dismissed prompt, otherwise a message for the user.
+    func setBiometricEnabled(_ enabled: Bool) async -> String? {
+        guard enabled else {
+            await turnOffBiometrics()
+            return nil
+        }
+        guard let key = vaultKey else { return "Vault is locked" }
+        do {
+            try await biometrics.enroll(vaultKey: key, reason: "Turn on biometric unlock")
+            try await repository.setSetting(SettingsKeys.biometricEnabled, "true")
+            biometricEnabled = true
+            return nil
+        } catch BiometricError.cancelled {
+            return nil
+        } catch {
+            biometrics.removeKey()
+            return "Failed to enable biometric unlock: \(Self.message(error))"
+        }
+    }
+
+    private func turnOffBiometrics() async {
+        biometrics.removeKey()
+        biometricEnabled = false
+        try? await repository.setSetting(SettingsKeys.biometricEnabled, "false")
+    }
+
+    private static func message(_ error: Error) -> String {
+        if case BiometricError.failed(let message) = error { return message }
+        return error.localizedDescription
     }
 
     // MARK: Import & export

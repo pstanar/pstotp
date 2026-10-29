@@ -6,8 +6,8 @@ import GRDB
 /// Entries are stored as AES-256-GCM encrypted JSON payloads. The entry ID is the associated data,
 /// binding each ciphertext to its entry. The vault key is passed in per call and never stored here.
 ///
-/// Not yet ported from Android: biometric key storage (needs Keychain / LocalAuthentication, lives
-/// with the app target) and `runInTransaction` (only the sync service uses it).
+/// Biometric key storage lives in the app (`KeychainBiometricKeyStore`): it needs the Keychain and
+/// LocalAuthentication. Not yet ported from Android: `runInTransaction` (only the sync service uses it).
 public final class VaultRepository: Sendable {
     private let db: AppDatabase
     private let now: @Sendable () -> Int64

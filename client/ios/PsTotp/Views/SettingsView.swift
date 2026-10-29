@@ -14,16 +14,37 @@ struct SettingsView: View {
     @State private var importCandidates: ImportCandidatesBox?
     @State private var importError: String?
     @State private var working = false
+    @State private var biometricError: String?
+    @State private var changingBiometrics = false
 
     var body: some View {
         Form {
+            if let biometry = model.biometry {
+                Section {
+                    Toggle(isOn: Binding(get: { model.biometricEnabled }, set: setBiometrics)) {
+                        Text("Unlock with \(biometry.name)")
+                    }
+                    .disabled(changingBiometrics)
+                    .accessibilityIdentifier("settings.biometric")
+                } header: {
+                    Text("Security")
+                } footer: {
+                    if let biometricError {
+                        Text(biometricError).foregroundStyle(Palette.error)
+                    } else {
+                        Text("Unlock the vault with \(biometry.name) instead of your password.")
+                    }
+                }
+                .listRowBackground(Palette.surface)
+            }
+
             Section {
                 Picker("Auto-lock", selection: Binding(get: { model.lockTimeout }, set: model.setLockTimeout)) {
                     ForEach(LockTimeout.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .accessibilityIdentifier("settings.autoLock")
             } header: {
-                Text("Security")
+                if model.biometry == nil { Text("Security") }
             } footer: {
                 Text("Lock the vault after this long in the background.")
             }
@@ -93,6 +114,15 @@ struct SettingsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(importError ?? "")
+        }
+    }
+
+    private func setBiometrics(_ enabled: Bool) {
+        changingBiometrics = true
+        biometricError = nil
+        Task {
+            biometricError = await model.setBiometricEnabled(enabled)
+            changingBiometrics = false
         }
     }
 
