@@ -41,7 +41,7 @@ public partial class SessionCleanupService(
         }
     }
 
-    private async Task CleanupAsync(CancellationToken ct)
+    internal async Task CleanupAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -91,15 +91,35 @@ public partial class SessionCleanupService(
             .Where(e => e.DeletedAt != null && e.DeletedAt < retentionCutoff)
             .ExecuteDeleteAsync(ct);
 
-        // Revoked devices older than retention period
-        var revokedDevices = await db.Devices
-            .Where(d => d.RevokedAt != null && d.RevokedAt < retentionCutoff)
+        // Revoked devices older than retention period. Devices are referenced by envelopes,
+        // refresh tokens and audit events (no DB-level cascade), so clear those first.
+        var staleDevices = db.Devices.Where(d => d.RevokedAt != null && d.RevokedAt < retentionCutoff);
+        var staleDeviceIds = staleDevices.Select(d => d.Id);
+
+        await using var deviceTx = await db.Database.BeginTransactionAsync(ct);
+
+        var staleDeviceEnvelopes = await db.VaultKeyEnvelopes
+            .Where(e => e.DeviceId != null && staleDeviceIds.Contains(e.DeviceId.Value))
             .ExecuteDeleteAsync(ct);
 
-        // Revoked vault key envelopes older than retention period
-        var revokedEnvelopes = await db.VaultKeyEnvelopes
+        var staleDeviceTokens = await db.RefreshTokens
+            .Where(t => staleDeviceIds.Contains(t.DeviceId))
+            .ExecuteDeleteAsync(ct);
+
+        // Keep the audit trail; just detach it from the removed device.
+        await db.AuditEvents
+            .Where(e => e.DeviceId != null && staleDeviceIds.Contains(e.DeviceId.Value))
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.DeviceId, (Guid?)null), ct);
+
+        var revokedDevices = await staleDevices.ExecuteDeleteAsync(ct);
+
+        await deviceTx.CommitAsync(ct);
+
+        // Remaining revoked vault key envelopes older than retention period
+        var revokedEnvelopes = staleDeviceEnvelopes + await db.VaultKeyEnvelopes
             .Where(e => e.RevokedAt != null && e.RevokedAt < retentionCutoff)
             .ExecuteDeleteAsync(ct);
+        oldTokens += staleDeviceTokens;
 
         // Revoked WebAuthn credentials older than retention period
         var revokedCredentials = await db.WebAuthnCredentials
