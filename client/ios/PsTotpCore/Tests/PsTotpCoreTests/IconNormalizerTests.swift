@@ -65,11 +65,12 @@ struct IconNormalizerTests {
         #expect(ImportIcons.pendingCount(entries) == 3)
 
         let progress = FetchLog()
-        let resolved = await ImportIcons.resolve(entries, fetch: { url in
+        let resolvedImport = await ImportIcons.resolve(entries, fetch: { url in
             await fetched.append(url.absoluteString)
             return url.lastPathComponent == "b.png" ? png : nil
         }, progress: { done, total in await progress.append("\(done)/\(total)") })
 
+        let resolved = resolvedImport.entries
         #expect(await fetched.items == ["https://x.test/b.png", "https://x.test/404"])
         #expect(await progress.items == ["1/3", "2/3", "3/3"])
         #expect(try decodedSize(try #require(resolved[0].icon)) == (64, 64))

@@ -52,7 +52,13 @@ public enum EntryValidation {
     /// "Unknown" (as on Android), and everything else — secret, algorithm, digits, period, icon,
     /// id, order — is untouched.
     public static func edited(_ entry: VaultEntry, issuer: String, accountName: String) -> VaultEntry {
+        edited(entry, issuer: issuer, accountName: accountName, icon: entry.icon)
+    }
+
+    /// As above, and the icon becomes `icon` (nil clears it).
+    public static func edited(_ entry: VaultEntry, issuer: String, accountName: String, icon: String?) -> VaultEntry {
         var result = entry
+        result.icon = icon
         result.issuer = issuerOrUnknown(issuer)
         result.accountName = accountName.trimmingCharacters(in: .whitespacesAndNewlines)
         return result
