@@ -26,6 +26,7 @@ struct AddAccountView: View {
     @State private var algorithm = "SHA1"
     @State private var digits = "6"
     @State private var period = "30"
+    @State private var icon: String?
 
     // URI
     @State private var uri = ""
@@ -61,7 +62,11 @@ struct AddAccountView: View {
                     }
                     .listRowBackground(Palette.surface)
                 }
+
+                // After the error so a message about the fields above it stays near them.
+                if mode == .manual { IconPicker(model: model, issuer: issuer, icon: $icon) }
             }
+            .scrollDismissesKeyboard(.interactively)
             .scrollContentBackground(.hidden)
             .background(Palette.background)
             .navigationTitle("Add Account")
@@ -203,7 +208,7 @@ struct AddAccountView: View {
             case .manual:
                 try EntryValidation.manualEntry(
                     issuer: issuer, accountName: accountName, secret: secret,
-                    algorithm: algorithm, digits: digits, period: period)
+                    algorithm: algorithm, digits: digits, period: period, icon: icon)
             case .uri:
                 try OtpauthUri.parse(uri.trimmingCharacters(in: .whitespacesAndNewlines))
             case .scan, .image:

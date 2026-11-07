@@ -55,10 +55,11 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 30 | Leftover biometric key after reinstall | Keystore keys go away with the app. | Keychain items survive an uninstall, so a stored key is deleted when the app starts with no vault set up. | Platform difference; the stale key would belong to a vault that no longer exists. | platform | |
 | 31 | Biometric wording | Settings: "Biometric unlock" / "Unlock vault with fingerprint or face"; button "Unlock with biometrics"; prompt "Unlock PsTotp / Use your fingerprint to unlock". | Names the sensor: "Unlock with Face ID" (or Touch ID / Optic ID) in Settings and on the button; system prompt reason "Unlock PsTotp". The Settings switch only appears when biometry is enrolled (Android: when available). | iOS convention. | cosmetic | |
 | 32 | Which code a tap copies near the end of the period | The card decides from its once-a-second `timeLeft` state, so it can be up to a second stale. | Decided from the clock at the moment of the tap (`AppModel.copyCode(of:)` → `LiveCode`). | Exact 3 s window. | internal | |
+| 33 | Icon picker feedback | Failures and "library full" are toasts; an unreadable uploaded image fails silently. | Shown inline under the URL field ("Could not fetch image", "Could not read that image", the library-full message): a toast would sit behind the sheet. | The Edit / Add forms are sheets, which cover the app's toast. | cosmetic | |
+| 34 | My icons tile actions | A small ⋮ button in each tile's corner opens Rename / Delete. | Long-press a tile for a context menu with Rename / Delete. | iOS convention; a 12 pt corner button is below the touch-target minimum. | cosmetic | |
 
 ## Not ported yet (pending, not differences)
 
-icon editing (the Edit screen keeps the current icon; changing it comes with the icon picker), icon picker / icon library (and the import preview's "Add icons to My Icons" checkbox and icon summary
-in the import toast), connected mode (server sync, passkeys, devices,
+the icon library's server sync, connected mode (server sync, passkeys, devices,
 audit, recovery; Settings' "Connect to Server" and the connected-only Change Password, Devices, Audit Log, Passkeys,
 Recovery Codes buttons).

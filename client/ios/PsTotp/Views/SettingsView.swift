@@ -309,6 +309,9 @@ private struct ImportPreviewView: View {
 
     private var duplicateCount: Int { candidates.count(where: \.isDuplicate) }
     private var activeCount: Int { candidates.count { $0.action != .skip } }
+    private var hasIcons: Bool {
+        candidates.contains { $0.action != .skip && $0.imported.icon?.hasPrefix("data:") == true }
+    }
 
     private var title: String {
         var title = "\(candidates.count) entries found"
@@ -329,6 +332,14 @@ private struct ImportPreviewView: View {
                         .onChange(of: duplicateAction) { _, action in
                             candidates = ImportCandidate.settingDuplicateAction(action, in: candidates)
                         }
+                    }
+                    .listRowBackground(Palette.surface)
+                }
+
+                if hasIcons {
+                    Section {
+                        Toggle("Add icons to My icons", isOn: $model.addIconsToLibrary)
+                            .accessibilityIdentifier("import.addIcons")
                     }
                     .listRowBackground(Palette.surface)
                 }

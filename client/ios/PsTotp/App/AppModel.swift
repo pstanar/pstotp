@@ -30,7 +30,13 @@ final class AppModel {
     /// Transient confirmation ("Code copied").
     private(set) var toast: String?
 
+    /// The icon library ("My icons"), decrypted while unlocked.
+    private(set) var libraryIcons: [LibraryIcon] = []
+    /// Import preview option: add the imported entries' icons to My icons.
+    var addIconsToLibrary = true
+
     private let repository: VaultRepository
+    private let iconLibrary: IconLibraryRepository
     private let biometrics: BiometricKeyStore
     private var vaultKey: Data?
     private var usage: [String: EntryUsageRecord] = [:]
@@ -41,8 +47,15 @@ final class AppModel {
     private var toastTask: Task<Void, Never>?
     private var writeQueue: Task<Void, Never>?
 
-    init(repository: VaultRepository, biometrics: BiometricKeyStore = KeychainBiometricKeyStore()) {
+    /// Original bytes of the icons resolved for the import being previewed, by normalised data URL.
+    private var importIconSources: [String: Data] = [:]
+
+    init(
+        repository: VaultRepository, iconLibrary: IconLibraryRepository,
+        biometrics: BiometricKeyStore = KeychainBiometricKeyStore()
+    ) {
         self.repository = repository
+        self.iconLibrary = iconLibrary
         self.biometrics = biometrics
     }
 
@@ -88,6 +101,7 @@ final class AppModel {
             let key = try await repository.setupPassword(password)
             vaultKey = key
             entries = []
+            libraryIcons = []
             errorMessage = nil
             phase = .unlocked
             return true
@@ -136,8 +150,10 @@ final class AppModel {
             // Decrypt before touching any state: a wrong-key failure must not leave the UI
             // "unlocked" with no entries.
             let decrypted = try await repository.getAllEntries(vaultKey: key)
+            let library = (try? await iconLibrary.load(vaultKey: key)) ?? []
             vaultKey = key
             entries = decrypted
+            libraryIcons = library
             sortUsage = usage
             errorMessage = nil
             phase = .unlocked
@@ -157,6 +173,8 @@ final class AppModel {
         if let count = vaultKey?.count { vaultKey?.resetBytes(in: 0..<count) }
         vaultKey = nil
         entries = []
+        libraryIcons = []
+        importIconSources = [:]
         errorMessage = nil
         if phase == .unlocked { phase = .locked }
     }
@@ -180,12 +198,12 @@ final class AppModel {
         }
     }
 
-    /// Rename an entry (service name and account). Secret, algorithm, icon and order are untouched.
-    /// An edit that changes nothing is not written, so it doesn't queue a pointless sync.
+    /// Edit an entry's service name, account and icon (nil clears it). Secret, algorithm and order
+    /// are untouched. An edit that changes nothing is not written, so it doesn't queue a pointless sync.
     /// - Returns: nil on success, otherwise a message for the user.
-    func updateEntry(_ entry: VaultEntry, issuer: String, accountName: String) async -> String? {
+    func updateEntry(_ entry: VaultEntry, issuer: String, accountName: String, icon: String?) async -> String? {
         guard let key = vaultKey else { return "Vault is locked" }
-        let edited = EntryValidation.edited(entry, issuer: issuer, accountName: accountName)
+        let edited = EntryValidation.edited(entry, issuer: issuer, accountName: accountName, icon: icon)
         guard edited != entry else { return nil }
         do {
             try await repository.updateEntry(vaultKey: key, entry: edited)
@@ -377,7 +395,8 @@ final class AppModel {
             await MainActor.run { self.importIconProgress = (done, total) }
         }
         importIconProgress = nil
-        return .ready(ImportCandidate.buildCandidates(imported: resolved, existing: entries))
+        importIconSources = resolved.sourceBytes
+        return .ready(ImportCandidate.buildCandidates(imported: resolved.entries, existing: entries))
     }
 
     /// Write the confirmed import in one transaction and reload the vault.
@@ -389,10 +408,75 @@ final class AppModel {
             try await repository.importEntries(vaultKey: key, plan: plan)
             entries = try await repository.getAllEntries(vaultKey: key)
             sortUsage = usage
-            showToast("Imported \(plan.count) entries")   // Android's wording
+            let icons = await addImportedIconsToLibrary(candidates, key: key)
+            showToast(ImportIcons.importMessage(entries: plan.count, icons: icons))   // Android's wording
             return nil
         } catch {
             return "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Opt-in, one batched write. Not fatal: the entries are already imported.
+    private func addImportedIconsToLibrary(_ candidates: [ImportCandidate], key: Data) async -> IconBatchResult? {
+        guard addIconsToLibrary else { return nil }
+        let items = ImportIcons.libraryItems(candidates, sourceBytes: importIconSources)
+        guard !items.isEmpty,
+              let (icons, result) = try? await iconLibrary.addBatch(vaultKey: key, current: libraryIcons, items: items)
+        else { return nil }
+        libraryIcons = icons
+        return result
+    }
+
+    // MARK: Icon library
+
+    /// Download an icon for the picker (5 s timeouts). Nil when it can't be fetched or decoded.
+    func downloadIcon(from url: URL) async -> (dataUrl: String, source: Data)? {
+        guard let bytes = await Self.fetchIcon(url),
+              let dataUrl = IconNormalizer.normalizedDataUrl(imageBytes: bytes) else { return nil }
+        return (dataUrl, bytes)
+    }
+
+    /// Save an icon to My icons, de-duplicated on content. Failures (library full) come back as a
+    /// message; a duplicate is not a failure, the existing icon is simply kept.
+    func addLibraryIcon(label: String, dataUrl: String, source: Data?) async -> String? {
+        guard let key = vaultKey else { return "Vault is locked" }
+        do {
+            libraryIcons = try await iconLibrary.add(
+                vaultKey: key, current: libraryIcons,
+                input: IconInput(label: label, dataUrl: dataUrl, sourceBytes: source))
+            return nil
+        } catch let error as IconLibraryError {
+            return error.description
+        } catch {
+            return "Could not save icon"
+        }
+    }
+
+    func renameLibraryIcon(id: String, label: String) async -> String? {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return await changeLibrary { icons in
+            icons.map { icon in
+                guard icon.id == id else { return icon }
+                var copy = icon
+                copy.label = trimmed.isEmpty ? "Icon" : trimmed
+                return copy
+            }
+        }
+    }
+
+    func removeLibraryIcon(id: String) async -> String? {
+        await changeLibrary { $0.filter { $0.id != id } }
+    }
+
+    private func changeLibrary(_ change: ([LibraryIcon]) -> [LibraryIcon]) async -> String? {
+        guard let key = vaultKey else { return "Vault is locked" }
+        let next = change(libraryIcons)
+        do {
+            try await iconLibrary.save(vaultKey: key, icons: next)
+            libraryIcons = next
+            return nil
+        } catch {
+            return "Could not save icon"
         }
     }
 
@@ -489,6 +573,6 @@ extension AppModel {
             try mutableDir.setResourceValues(values)
             db = try AppDatabase.open(at: dir.appendingPathComponent("pstotp.db"))
         }
-        return AppModel(repository: VaultRepository(db: db))
+        return AppModel(repository: VaultRepository(db: db), iconLibrary: IconLibraryRepository(db: db))
     }
 }

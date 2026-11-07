@@ -1,8 +1,7 @@
 import PsTotpCore
 import SwiftUI
 
-/// Rename an account: service name and (optional) account. The icon is kept as is — changing it
-/// arrives with the icon picker.
+/// Edit an account: service name, (optional) account and icon.
 struct EditAccountView: View {
     @Bindable var model: AppModel
     let entry: VaultEntry
@@ -10,6 +9,7 @@ struct EditAccountView: View {
 
     @State private var issuer: String
     @State private var accountName: String
+    @State private var icon: String?
     @State private var error: String?
     @State private var saving = false
 
@@ -18,6 +18,7 @@ struct EditAccountView: View {
         self.entry = entry
         _issuer = State(initialValue: entry.issuer)
         _accountName = State(initialValue: entry.accountName)
+        _icon = State(initialValue: entry.icon)
     }
 
     var body: some View {
@@ -48,7 +49,10 @@ struct EditAccountView: View {
                     }
                     .listRowBackground(Palette.surface)
                 }
+
+                IconPicker(model: model, issuer: issuer, icon: $icon)
             }
+            .scrollDismissesKeyboard(.interactively)
             .scrollContentBackground(.hidden)
             .background(Palette.background)
             .navigationTitle("Edit Account")
@@ -62,7 +66,7 @@ struct EditAccountView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         // Locked or deleted underneath us (auto-lock, delete from elsewhere): nothing left to edit.
         .onChange(of: model.entry(id: entry.id) == nil) { _, gone in if gone { dismiss() } }
     }
@@ -70,7 +74,7 @@ struct EditAccountView: View {
     private func save() {
         saving = true
         Task {
-            let failure = await model.updateEntry(entry, issuer: issuer, accountName: accountName)
+            let failure = await model.updateEntry(entry, issuer: issuer, accountName: accountName, icon: icon)
             saving = false
             if let failure { error = failure } else { dismiss() }
         }

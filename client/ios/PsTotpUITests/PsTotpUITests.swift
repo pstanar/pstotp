@@ -219,6 +219,115 @@ final class PsTotpUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["grid.issuer"].label, "GHE")
     }
 
+    /// The forms are lazy lists: rows below the fold aren't in the hierarchy until scrolled to.
+    @discardableResult
+    private func reveal(_ id: String) -> XCUIElement {
+        let element = app.buttons[id]
+        var swipes = 0
+        while !(element.exists && element.isHittable) && swipes < 10 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(element.exists, "\(id) missing")
+        return element
+    }
+
+    func testEditPicksAndClearsAnEmojiIcon() {
+        createVault()
+        addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")
+
+        app.buttons["More options for GitHub"].tap()
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(app.navigationBars["Edit Account"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["icon.clear"].exists)
+        let key = reveal("icon.emoji.🔑")
+        key.tap()
+        XCTAssertTrue(key.isSelected)
+        XCTAssertTrue(app.buttons["icon.clear"].waitForExistence(timeout: 5))
+        app.buttons["edit.save"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.GitHub"].waitForExistence(timeout: 5))
+
+        // Saved: reopening shows it selected; clearing it and saving removes it again.
+        app.buttons["More options for GitHub"].tap()
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(reveal("icon.emoji.🔑").isSelected)
+        app.swipeDown(); app.swipeDown(); app.swipeDown()
+        app.buttons["icon.clear"].tap()
+        XCTAssertFalse(reveal("icon.emoji.🔑").isSelected)
+        app.swipeDown(); app.swipeDown(); app.swipeDown()
+        app.buttons["edit.save"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.GitHub"].waitForExistence(timeout: 5))
+        app.buttons["More options for GitHub"].tap()
+        app.buttons["Edit"].tap()
+        XCTAssertFalse(reveal("icon.emoji.🔑").isSelected)
+        app.swipeDown(); app.swipeDown(); app.swipeDown()
+        app.buttons["Cancel"].tap()
+    }
+
+    func testManualAddKeepsThePickedEmoji() {
+        createVault()
+        openAddManual()
+        type("Acme", into: "add.issuer")
+        type("JBSWY3DPEHPK3PXP", into: "add.secret")
+        let globe = reveal("icon.emoji.🌐")
+        globe.tap()
+        XCTAssertTrue(globe.isSelected)
+        app.swipeDown(); app.swipeDown(); app.swipeDown()
+        app.buttons["add.submit"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["card.Acme"].waitForExistence(timeout: 5))
+
+        app.buttons["More options for Acme"].tap()
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(reveal("icon.emoji.🌐").isSelected)
+        app.buttons["Cancel"].tap()
+    }
+
+    // MARK: Live icon sources (need the network / a photo in the simulator's library)
+
+    /// Run with `TEST_RUNNER_PSTOTP_LIVE=1`; the photo test also needs an image added with
+    /// `xcrun simctl addmedia <udid> <file>`.
+    private func requireLive() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["PSTOTP_LIVE"] == "1", "set TEST_RUNNER_PSTOTP_LIVE=1")
+    }
+
+    func testLiveFetchIconFromAUrlSavesItToMyIcons() throws {
+        try requireLive()
+        createVault()
+        openAddManual()
+        type("Octo", into: "add.issuer")
+        type("JBSWY3DPEHPK3PXP", into: "add.secret")
+        let url = app.textFields["icon.url"]
+        for _ in 0..<10 where !url.isHittable { app.swipeUp() }
+        url.tap()
+        url.typeText("https://github.com/favicon.ico")
+        app.buttons["icon.fetch"].tap()
+        let tile = reveal("icon.library.github.com")
+        XCTAssertTrue(tile.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(tile.isSelected)
+        XCTAssertFalse(app.staticTexts["icon.notice"].exists)
+    }
+
+    func testLivePhotoUploadSavesItToMyIcons() throws {
+        try requireLive()
+        createVault()
+        openAddManual()
+        type("Photo", into: "add.issuer")
+        type("JBSWY3DPEHPK3PXP", into: "add.secret")
+        // A short drag brings the picker above the keyboard (a full swipe overshoots under the nav bar).
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.30)))
+        let upload = app.buttons["icon.upload"]
+        XCTAssertTrue(upload.waitForExistence(timeout: 5) && upload.isHittable, app.debugDescription)
+        upload.tap()
+        // The system picker's grid; the newest photo (the one added with simctl) comes first.
+        let image = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(image.waitForExistence(timeout: 15), app.debugDescription)
+        image.tap()
+        let tile = reveal("icon.library.Photo")
+        XCTAssertTrue(tile.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(tile.isSelected)
+    }
+
     func testEditCancelLeavesTheEntryUnchanged() {
         createVault()
         addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")

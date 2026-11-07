@@ -13,7 +13,7 @@ struct AppModelTests {
 
     init() throws { db = try AppDatabase.inMemory() }
 
-    private func makeModel() -> AppModel { AppModel(repository: VaultRepository(db: db), biometrics: biometrics) }
+    private func makeModel() -> AppModel { AppModel(repository: VaultRepository(db: db), iconLibrary: IconLibraryRepository(db: db), biometrics: biometrics) }
 
     private func started() async -> AppModel {
         let model = makeModel()
@@ -116,7 +116,7 @@ struct AppModelTests {
                                                      secret: "JBSWY3DPEHPK3PXP", algorithm: "SHA256",
                                                      digits: 8, period: 60, icon: "🔑"))
         let original = model.entries[0]
-        #expect(await model.updateEntry(original, issuer: "  GitHub Enterprise ", accountName: " work ") == nil)
+        #expect(await model.updateEntry(original, issuer: "  GitHub Enterprise ", accountName: " work ", icon: original.icon) == nil)
 
         for candidate in [model.entries[0], await relaunchedFirstEntry()] {
             #expect(candidate.id == original.id)
@@ -138,7 +138,7 @@ struct AppModelTests {
         let model = await started()
         _ = await model.setupPassword(strong, confirm: strong)
         _ = await model.addEntry(plain("GitHub"))
-        _ = await model.updateEntry(model.entries[0], issuer: "   ", accountName: "")
+        _ = await model.updateEntry(model.entries[0], issuer: "   ", accountName: "", icon: model.entries[0].icon)
         #expect(model.entries[0].issuer == "Unknown")
         #expect(model.entries[0].accountName == "")
     }
@@ -149,7 +149,7 @@ struct AppModelTests {
         _ = await model.addEntry(plain("GitHub"))
         let entry = model.entries[0]
         model.lock()
-        #expect(await model.updateEntry(entry, issuer: "Other", accountName: "x") == "Vault is locked")
+        #expect(await model.updateEntry(entry, issuer: "Other", accountName: "x", icon: entry.icon) == "Vault is locked")
     }
 
     @Test func renamingReSortsAnAlphabeticalList() async {
@@ -159,7 +159,7 @@ struct AppModelTests {
         model.setSortMode(.alphabetical)
         #expect(model.displayEntries().map(\.issuer) == ["alpha", "Zeta"])
         let zeta = model.entries.first { $0.issuer == "Zeta" }!
-        _ = await model.updateEntry(zeta, issuer: "Aardvark", accountName: zeta.accountName)
+        _ = await model.updateEntry(zeta, issuer: "Aardvark", accountName: zeta.accountName, icon: zeta.icon)
         #expect(model.displayEntries().map(\.issuer) == ["Aardvark", "alpha"])
     }
 
@@ -435,6 +435,107 @@ struct AppModelTests {
         else { Issue.record(); return }
         model.lock()
         #expect(await model.confirmImport(candidates) == "Vault is locked")
+    }
+
+    // MARK: Icons
+
+    /// A 1×1 PNG: normalised to 64×64 like any picked image.
+    private static let onePixelPng = Data(base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")!
+
+    private func normalisedPng() -> String {
+        IconNormalizer.normalizedDataUrl(imageBytes: Self.onePixelPng)!
+    }
+
+    @Test func editChangesAndClearsTheIcon() async {
+        let model = await unlocked(with: ["GitHub"])
+        let entry = model.entries[0]
+        #expect(await model.updateEntry(entry, issuer: "GitHub", accountName: "me", icon: "🔑") == nil)
+        #expect(await relaunchedFirstEntry().icon == "🔑")
+        #expect(await model.updateEntry(model.entries[0], issuer: "GitHub", accountName: "me", icon: nil) == nil)
+        #expect(await relaunchedFirstEntry().icon == nil)
+    }
+
+    @Test func libraryIconsAreSavedDedupedRenamedDeletedAndSurviveRelaunch() async {
+        let model = await unlocked()
+        let png = normalisedPng()
+        #expect(await model.addLibraryIcon(label: "Acme", dataUrl: png, source: Self.onePixelPng) == nil)
+        #expect(await model.addLibraryIcon(label: "Again", dataUrl: png, source: Self.onePixelPng) == nil)
+        #expect(model.libraryIcons.map(\.label) == ["Acme"])      // same content: the existing icon is kept
+
+        let id = model.libraryIcons[0].id
+        #expect(id == id.lowercased())
+        #expect(await model.renameLibraryIcon(id: id, label: "  Acme Corp ") == nil)
+        #expect(model.libraryIcons[0].label == "Acme Corp")
+        #expect(await model.renameLibraryIcon(id: id, label: "   ") == nil)
+        #expect(model.libraryIcons[0].label == "Icon")
+        _ = await model.renameLibraryIcon(id: id, label: "Acme")
+
+        let relaunch = await started()
+        #expect(await relaunch.unlock(password: strong))
+        #expect(relaunch.libraryIcons.map(\.label) == ["Acme"])
+
+        #expect(await relaunch.removeLibraryIcon(id: id) == nil)
+        #expect(relaunch.libraryIcons.isEmpty)
+        let again = await started()
+        _ = await again.unlock(password: strong)
+        #expect(again.libraryIcons.isEmpty)
+    }
+
+    @Test func libraryIsClearedOnLockAndRefusedWhileLocked() async {
+        let model = await unlocked()
+        _ = await model.addLibraryIcon(label: "Acme", dataUrl: normalisedPng(), source: nil)
+        model.lock()
+        #expect(model.libraryIcons.isEmpty)
+        #expect(await model.addLibraryIcon(label: "X", dataUrl: "data:image/png;base64,AA", source: nil) == "Vault is locked")
+        #expect(await model.removeLibraryIcon(id: "x") == "Vault is locked")
+    }
+
+    @Test func aFullLibraryExplainsItself() async {
+        let model = await unlocked()
+        for n in 0..<IconLibraryLimits.maxIcons {
+            #expect(await model.addLibraryIcon(label: "I\(n)", dataUrl: "data:image/png;base64,AAAA\(n)", source: nil) == nil)
+        }
+        #expect(await model.addLibraryIcon(label: "Extra", dataUrl: "data:image/png;base64,ZZZZ", source: nil)
+                == "Icon library is full (100 max). Delete some icons first.")
+    }
+
+    private func iconExport(_ png: String) async -> String {
+        let model = await unlocked()
+        _ = await model.addEntry(VaultEntryPlaintext(issuer: "Acme", accountName: "me", secret: "JBSWY3DPEHPK3PXP", icon: png))
+        _ = await model.addEntry(VaultEntryPlaintext(issuer: "Acme2", accountName: "me", secret: "JBSWY3DPEHPK3PXP", icon: png))
+        guard case .file(let file) = await model.exportVault(format: .plain, password: "") else { return "" }
+        return file
+    }
+
+    @Test func importAddsEmbeddedIconsToTheLibraryOnceWhenAsked() async throws {
+        let file = await iconExport(normalisedPng())
+        let fresh = try AppDatabase.inMemory()
+        let model = AppModel(repository: VaultRepository(db: fresh), iconLibrary: IconLibraryRepository(db: fresh),
+                             biometrics: FakeBiometrics())
+        await model.start()
+        _ = await model.setupPassword(strong, confirm: strong)
+        guard case .ready(let candidates) = await model.prepareImport(file) else { Issue.record(); return }
+        #expect(model.addIconsToLibrary)        // on by default, as on Android
+        #expect(await model.confirmImport(candidates) == nil)
+        #expect(model.libraryIcons.map(\.label) == ["Acme"])
+        #expect(model.libraryIcons[0].sourceHash != nil)
+        #expect(model.toast == "Imported 2 entries · 1 icon added")
+    }
+
+    @Test func importLeavesTheLibraryAloneWhenTheOptionIsOff() async throws {
+        let file = await iconExport(normalisedPng())
+        let fresh = try AppDatabase.inMemory()
+        let model = AppModel(repository: VaultRepository(db: fresh), iconLibrary: IconLibraryRepository(db: fresh),
+                             biometrics: FakeBiometrics())
+        await model.start()
+        _ = await model.setupPassword(strong, confirm: strong)
+        guard case .ready(let candidates) = await model.prepareImport(file) else { Issue.record(); return }
+        model.addIconsToLibrary = false
+        #expect(await model.confirmImport(candidates) == nil)
+        #expect(model.libraryIcons.isEmpty)
+        #expect(model.entries.allSatisfy { $0.icon != nil })
+        #expect(model.toast == "Imported 2 entries")
     }
 
     // MARK: Upcoming code
