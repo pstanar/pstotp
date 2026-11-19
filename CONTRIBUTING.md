@@ -74,7 +74,8 @@ Before pushing, make sure your branch:
   - Server: `dotnet build PsTotp.slnx`
   - Web: `npm run build` (in `client/web`)
   - Android: `./gradlew :app:compileDebugKotlin` (in `client/android`)
-- **Passes tests**. See the three `## Tests` subsections of
+  - iOS: `(cd PsTotpCore && swift test)` (in `client/ios`)
+- **Passes tests**. See the four `## Tests` subsections of
   `DEVELOPER.md` for how to run each. Add or update tests for
   behavioural changes — use the "pure helper" extraction pattern to
   keep tests platform-free when you can.

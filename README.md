@@ -3,7 +3,7 @@
 **Zero-knowledge TOTP authenticator with multi-device sync.**
 
 PsTotp is a self-hostable TOTP (time-based one-time password) authenticator
-for web and Android. It encrypts every secret on the client side before
+for web, Android and iOS. It encrypts every secret on the client side before
 upload, so the server only ever sees ciphertext — even an administrator with
 full database access can't read your codes. Multi-device sync, passkey sign-in,
 recovery codes, drag-to-reorder, list and grid layouts, and drop-in imports
@@ -17,8 +17,9 @@ formats**, **real multi-device sync without trusting a SaaS**, and a working
 > **Status — roughly v0.9 / v1.0-beta.** The features most people expect of
 > a TOTP app are in place and exercised daily. It has been developed and
 > tested by one person; bugs you hit that the author didn't are expected.
-> Ready to try, file issues. Known gaps: no iOS client, macOS builds
-> available but not actively tested, SMTP-only (no OAuth2 / XOAUTH2 for
+> Ready to try, file issues. Known gaps: the iOS client is new and has only
+> been tested on the simulator (and cannot add or sign in with passkeys yet),
+> macOS builds available but not actively tested, SMTP-only (no OAuth2 / XOAUTH2 for
 > Outlook / Gmail without app passwords). See the
 > [docs backlog](docs/architecture/PLAN.md) for the full list.
 
@@ -152,7 +153,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough.
 A .NET 10 ASP.NET Core server (minimal-API pattern, EF Core, four DB
 providers via separate migration assemblies) plus a React 19 + TypeScript
 web client (Vite, TanStack Router, Zustand, Web Crypto API) and a Kotlin
-+ Jetpack Compose Android client. All crypto happens on the clients:
++ Jetpack Compose Android client, and a native SwiftUI iOS client. All crypto happens on the clients:
 Argon2id for password-derived keys, HKDF-SHA-256 for key derivation,
 AES-256-GCM for authenticated encryption, ECDH P-256 for device key
 exchange, WebAuthn for passkeys. The server authenticates users via a
@@ -189,6 +190,9 @@ for TOTP codes.
   `@simplewebauthn/browser`.
 - **Android**: Kotlin, Jetpack Compose (Material 3), Room, OkHttp,
   AndroidX Credentials (WebAuthn), Keystore-bound biometrics.
+- **iOS**: Swift 6, SwiftUI (iOS 17+), GRDB (SQLite), CryptoKit,
+  Keychain- and Face ID / Touch ID-bound biometrics. See
+  [`client/ios/README.md`](client/ios/README.md).
 - **Crypto**: Argon2id `m=64 MB, t=3, p=4`, HKDF-SHA-256, AES-256-GCM
   with explicit AD, ECDH P-256, WebAuthn (FIDO2) with attestation `none`.
 

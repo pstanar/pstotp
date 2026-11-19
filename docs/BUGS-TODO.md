@@ -5,6 +5,19 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
 
 ## Open
 
+**Where to start** (impact first; all are Android unless noted, and each is "suspected" from reading the code
+unless its entry says "Verified", so reproduce before fixing):
+
+1. *Data loss or lockout:* connecting a device that already has local accounts (wrong key, entries unreadable);
+   offline deletions that come back; an edit made during a push marked synced; first connect overwriting the
+   account's icon library; offline unlock with a non-default KDF.
+2. *Recovery that silently doesn't work:* regenerating codes without checking the password; account recovery
+   losing its session during the 24 h hold; a stale biometric key after recovery.
+3. *Crashes on bad input:* an invalid secret or `period: 0` crashing the card list.
+4. *Everything else:* non-atomic writes, scanner behaviour, reorder propagation, UX gaps and test gaps.
+5. *Web and server:* no floor on server-supplied KDF parameters (web); recovery-code regeneration needs no proof
+   of the password, and the missing `apple-app-site-association` endpoint (server).
+
 ### Android
 
 - [ ] **Invalid secret crashes the card (Suspected, likely)** — `TotpCard.kt:60` calls `TotpGenerator.generate`

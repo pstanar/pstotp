@@ -38,6 +38,9 @@ developer; everyone else comes in cold. Prerequisites:
 /client/android                     Kotlin + Compose Android client
   app/                              UI + ViewModels
   core/                             crypto, DB, repository, sync, API client
+/client/ios                         Swift + SwiftUI iOS client (see client/ios/README.md)
+  PsTotp/                           UI + AppModel
+  PsTotpCore/                       Swift package: crypto, DB, repository, sync, API client
 
 /docs/architecture                  design docs (PLAN, threat model, key hierarchy, ...)
 /docker-compose.yaml                Postgres + server container for local / prod use
@@ -62,6 +65,7 @@ plain editor and command-line tools. If you use an IDE, common choices are:
 - **Server**: Visual Studio 2026, JetBrains Rider, or VS Code with the C# Dev Kit.
 - **Web**: JetBrains WebStorm or VS Code.
 - **Android**: Android Studio.
+- **iOS**: Xcode (macOS only).
 
 Required tooling:
 
@@ -71,6 +75,7 @@ Required tooling:
   itself doesn't need to be installed separately.
 - **Android SDK** with platform 35 (target/compile) and platform-tools, plus
   NDK only if you plan to work on native code (we don't currently).
+- **Xcode 26+** and **XcodeGen** (`brew install xcodegen`) for iOS builds, on macOS only.
 - **Git** for version control.
 
 Optional tooling:
@@ -332,6 +337,23 @@ needs coverage, extract the pure part into an internal top-level function
 and test that — see `buildErrorMessage` in `ApiClient.kt` or
 `isVaultKeyMismatch` in `VaultRepository.kt` for the pattern.
 
+### iOS
+
+Swift Testing in the `PsTotpCore` package (pure Swift, runs on the Mac in seconds), XCTest/Swift Testing unit
+tests for the app's `AppModel`, and XCUITest end-to-end tests that drive the app on the simulator.
+
+```bash
+cd client/ios
+(cd PsTotpCore && swift test)        # package tests
+xcodegen generate                    # the Xcode project is generated from project.yml
+xcodebuild test -project PsTotp.xcodeproj -scheme PsTotp \
+  -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:PsTotpTests    # app unit tests
+```
+
+The full UI suite takes about ten minutes. Server behaviour is tested against fake servers that follow the
+real endpoints' rules (see `client/ios/README.md`). Cross-client crypto compatibility is pinned by
+known-answer vectors generated with Node (`PsTotpCore/Tests/PsTotpCoreTests/Vectors/generate.mjs`).
+
 ## Android build
 
 From `client/android/`:
@@ -349,6 +371,19 @@ any JDK 17+ on `PATH` (or `JAVA_HOME`) will do.
 A signed release build (keystore configuration, AAB/APK distribution) is
 not yet set up. See `memory/future_work.md` for the current plan.
 
+## iOS build
+
+From `client/ios/`:
+
+```bash
+xcodegen generate                    # regenerate PsTotp.xcodeproj after adding or removing files
+xcodebuild build -project PsTotp.xcodeproj -scheme PsTotp \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+Simulator builds need no Apple account; a device or TestFlight build needs a signing team. The iOS client is
+not part of `build.sh`, `Dockerfile.build` or CI.
+
 ## Conventions
 
 Follow the patterns you see in the code. A handful of things worth calling
@@ -358,7 +393,7 @@ out because they're not obvious from any one file:
   changes, and logic changes in the same commit. Separate them so a
   reviewer can understand each independently.
 - **Conventional-ish commits, but not dogmatic.** The existing log uses
-  short imperative subjects (`Android: fix X`, `Web: add Y`) with a prefix
+  short imperative subjects (`Android: fix X`, `Web: add Y`, `iOS: add Z`) with a prefix
   pointing at the area. Match that shape.
 - **Endpoints as static methods returning `IResult`**, not controllers. See
   the existing endpoint files.
@@ -388,8 +423,8 @@ out because they're not obvious from any one file:
 File a GitHub issue. Pull requests should:
 
 - Build cleanly (server: `dotnet build PsTotp.slnx`; web: `npm run build`;
-  Android: `./gradlew :app:compileDebugKotlin`).
-- Pass tests (see the three sections above).
+  Android: `./gradlew :app:compileDebugKotlin`; iOS: `(cd PsTotpCore && swift test)` in `client/ios`).
+- Pass tests (see the four sections above).
 - Update or add tests for behavioural changes. Use the "pure helper"
   extraction pattern to avoid platform dependencies when you can.
 - Not include unrelated formatting changes alongside the functional diff.
