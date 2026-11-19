@@ -69,11 +69,13 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 44 | A device that has never synced My icons meets an account that has a library | The device's copy replaces the account's (last write wins), so icons from other devices are lost. | The two are merged: the account's icons plus ours that match neither by id nor by content hash, within the caps; the result is pushed. Later changes are last-write-wins as on Android. | Connecting must not delete icons on either side. Decided with the user. | internal | |
 | 45 | Devices screen | A single list; approve / reject on pending devices only, no revoke, no marker for the current device. | Grouped like the web client (Pending, Approved, Revoked); approved devices other than this one can be revoked (swipe, with a confirmation); this device is labelled "This device" and can't be revoked from here. | Revoking is how a lost device is cut off; revoking the device in use would just sign the user out. Confirmed by the user. | internal | |
 | 46 | Regenerating recovery codes with a wrong password | New codes are generated and sent; their recovery envelope can never be opened. | The password is checked against the vault's own first ("Incorrect password"); nothing is sent on a mismatch. (Web verifies through a throwaway login instead; iOS avoids the extra session and login event.) | Otherwise a typo silently breaks recovery. | internal | |
+| 47 | Account recovery across the hold period | The in-progress recovery lives only in the screen; leaving it loses the session. | The pending session (id, server, email, release time) is saved; Connect shows "Resume account recovery"; the password is asked again at the end; "Forget this recovery" drops it locally. | The default hold is 24 h and a second redeem is refused while a session is active. | internal | |
+| 48 | Finishing recovery on a device that already has a local vault | The recovered key replaces the local one with the biometric copy left in place and local entries not re-encrypted. | Local entries and My icons are re-encrypted with the account's key and the biometric copy is removed (same `adopt` as login). | Avoids unreadable entries / wrong biometric key. | internal | |
 
 ## Not ported yet (pending, not differences)
 
 Password sign-in, registration, vault sync, the icon library's sync, Change Password, Devices, the Audit Log,
-Recovery Codes and passkey management (list, rename, revoke) are done. Still to do:
+Recovery Codes, passkey management (list, rename, revoke) and account recovery (without the passkey step-up) are done. Still to do:
 
 - **Adding a passkey and signing in with one.** Native iOS passkeys need (1) an Associated Domains entitlement
   `webcredentials:<server domain>` compiled into the app, so a generic build can't serve arbitrary self-hosted
@@ -82,4 +84,4 @@ Recovery Codes and passkey management (list, rename, revoke) are done. Still to 
   `assetlinks.json` today), and (4) translating the server's WebAuthn JSON to and from AuthenticationServices
   by hand (the SDK has no JSON API). Deferred by decision; the Passkeys screen says to add one elsewhere.
   Unverifiable on the simulator.
-- Account recovery (lost all devices): redeem a recovery code, wait out the hold, complete.
+- The passkey step-up inside account recovery (follows from the item above): recovery stops with "finish it from the web or Android app" when the server requires it.

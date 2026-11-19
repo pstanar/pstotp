@@ -119,6 +119,21 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   is not affected: `recovery-management.tsx` does a throwaway login (`completeLogin`) first, which the server
   verifies. (iOS: checks against the vault's own verifier first.)
 
+- [ ] **Account recovery can't survive its own hold period (Suspected, likely)** — the server holds recovery material
+  for `Recovery:HoldPeriodHours` (default 24) and keeps the session for 72 h, and `RedeemCode` answers 409 while a
+  session is active. `RecoveryScreen` keeps `sessionId` and the rest in `remember` state only, so leaving the screen
+  (back, process death, rotation) loses the session: the user can neither resume it nor redeem a new code until the
+  72 h expiry. Fix: persist the pending session (id, server URL, email, release time — no secrets) and offer
+  "resume" on the connect screen; the password is only needed again at the final step. (iOS: `PendingRecovery` in
+  settings, `RecoveryView` resumes.)
+- [ ] **Recovery leaves a stale biometric key on a device with its own vault (Suspected)** — `completeRecovery` ends with
+  `persistPasswordEnvelope(..., clearBiometric = false)` on the reasoning that recovery "decrypts the same vault key".
+  That holds for the account's key, not for a freshly installed device that already set up a local vault under a
+  different key: the biometric copy still wraps the local key, so biometric unlock yields the wrong key and entries
+  fail to decrypt (same class as the connect/login case above). Fix: clear biometric unless the recovered key equals
+  the current local key. The local entries are not re-encrypted either (see the connect entry). (iOS: through
+  `adopt`, which does both.)
+
 ### Web client
 
 - [ ] **`parseOtpauthUri` accepts `NaN` digits/period (Verified)** — `totp.ts` uses `parseInt` and then

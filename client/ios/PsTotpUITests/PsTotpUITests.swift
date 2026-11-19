@@ -466,6 +466,31 @@ final class PsTotpUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["register.error"].waitForExistence(timeout: 30))
     }
 
+    func testAccountRecoveryStartsFromTheConnectScreenAndReportsAnUnreachableServer() {
+        createVault()
+        app.buttons["vault.settings"].tap()
+        app.buttons["settings.connect"].tap()
+        let recover = app.buttons["connect.recover"]
+        XCTAssertTrue(recover.waitForExistence(timeout: 5))
+        XCTAssertFalse(recover.isEnabled)                       // needs a server address first
+        type("nonexistent.invalid", into: "connect.server")
+        XCTAssertTrue(recover.isEnabled)
+        recover.tap()
+
+        let start = app.buttons["recovery.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        XCTAssertFalse(start.isEnabled)
+        type("me@example.com", into: "recovery.email")
+        type("some password", into: "recovery.password")
+        type("ABCDEFGHJK", into: "recovery.code")
+        XCTAssertTrue(start.isEnabled)
+        start.tap()
+
+        // No such host: explained, nothing remembered, the form is back.
+        XCTAssertTrue(app.descendants(matching: .any)["recovery.error"].waitForExistence(timeout: 30))
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+    }
+
     func testUpcomingCodeIsPreviewedNearTheEndOfThePeriod() throws {
         createVault()
         app.buttons["vault.settings"].tap()

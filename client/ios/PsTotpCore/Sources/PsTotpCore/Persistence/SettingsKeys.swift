@@ -40,6 +40,10 @@ public enum SettingsKeys {
     public static let sortReversed = "sort_reversed"
     public static let layoutMode = "layout_mode"
 
+    // Account recovery in progress (JSON `PendingRecovery`): the hold period lasts hours, so it must survive
+    // leaving the screen or the app.
+    public static let recoverySession = "recovery_session"
+
     // Sync state
     public static let pendingReorder = "pending_reorder"
 

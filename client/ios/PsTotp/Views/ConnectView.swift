@@ -14,6 +14,8 @@ struct ConnectView: View {
     @State private var error: String?
     @State private var pendingApproval = false
     @State private var showRegister = false
+    @State private var showRecovery = false
+    @State private var hasPendingRecovery = false
     @FocusState private var focus: Field?
 
     private enum Field { case server, email, password }
@@ -63,6 +65,10 @@ struct ConnectView: View {
                     .disabled(busy || ServerURL.normalize(serverUrl) == nil)
                     .padding(.top, 8)
                     .accessibilityIdentifier("connect.register")
+
+                Button(hasPendingRecovery ? "Resume account recovery" : "Lost access? Recover account") { showRecovery = true }
+                    .disabled(busy || (!hasPendingRecovery && ServerURL.normalize(serverUrl) == nil))
+                    .accessibilityIdentifier("connect.recover")
             }
             .disabled(busy)
             .padding(24)
@@ -76,6 +82,16 @@ struct ConnectView: View {
                 showRegister = false
                 dismiss()
             }
+        }
+        .navigationDestination(isPresented: $showRecovery) {
+            RecoveryView(model: model, serverUrl: serverUrl, email: email) {
+                showRecovery = false
+                dismiss()
+            }
+        }
+        .task { hasPendingRecovery = await model.pendingRecovery() != nil }
+        .onChange(of: showRecovery) { _, shown in
+            if !shown { Task { hasPendingRecovery = await model.pendingRecovery() != nil } }
         }
         .onChange(of: serverUrl) { error = nil }
         .onChange(of: email) { error = nil }

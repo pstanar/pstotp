@@ -387,6 +387,168 @@ struct AuthServiceTests {
         }
     }
 
+    // MARK: Account recovery
+
+    private let sessionId = "11111111-2222-3333-4444-555555555555"
+    private let recoveredDeviceId = "99999999-8888-7777-6666-555555555555"
+
+    private var redeemReply: StubTransport.Reply {
+        .init(body: #"{"recoverySessionId":"\#(sessionId)","requiresWebAuthn":false,"releaseEarliestAt":"2026-11-20T10:00:00Z"}"#)
+    }
+
+    @Test func startingRecoveryProvesThePasswordAndRemembersTheSession() async throws {
+        let (service, stub, _) = make([challengeReply, redeemReply])
+        let pending = try await service.startRecovery(serverUrl: url, email: "a@b.c", password: "RecPassw0rd!", recoveryCode: "ABCDEFGHJK")
+
+        #expect(stub.requests[1].url?.path == "/api/recovery/codes/redeem")
+        let body = try json(stub.requests[1])
+        #expect(body["email"] as? String == "a@b.c" && body["recoveryCode"] as? String == "ABCDEFGHJK")
+        let proof = try #require(body["verifierProof"] as? [String: Any])
+        let ak = try authKey("RecPassw0rd!")
+        let expected = try ClientProof.compute(verifier: KeyDerivation.deriveVerifier(authKey: ak), nonce: nonce, loginSessionId: guid)
+        #expect(proof["clientProof"] as? String == expected.base64EncodedString())
+
+        #expect(pending == PendingRecovery(sessionId: sessionId, serverUrl: url, email: "a@b.c",
+                                           releaseEarliestAt: "2026-11-20T10:00:00Z", requiresPasskey: false))
+        // Remembered across launches: a new service on the same database finds it.
+        let (again, _, _) = make([])
+        #expect(try await again.pendingRecovery() == pending)
+        try await again.forgetPendingRecovery()
+        #expect(try await service.pendingRecovery() == nil)
+    }
+
+    @Test func aRejectedCodeLeavesNothingBehind() async throws {
+        let (service, _, _) = make([challengeReply, .init(status: 409, body: #"{"detail":"An active recovery session already exists"}"#)])
+        await #expect(throws: ApiError.conflict("An active recovery session already exists")) {
+            _ = try await service.startRecovery(serverUrl: url, email: "a@b.c", password: "pw", recoveryCode: "X")
+        }
+        #expect(try await service.pendingRecovery() == nil)
+    }
+
+    private func pendingFixture() -> PendingRecovery {
+        PendingRecovery(sessionId: sessionId, serverUrl: url, email: "a@b.c", releaseEarliestAt: "2026-11-20T10:00:00Z", requiresPasskey: false)
+    }
+
+    @Test func theHoldPeriodReportsPendingAndKeepsTheLatestReleaseTime() async throws {
+        let (service, stub, _) = make([.init(body: #"{"status":"pending","releaseEarliestAt":"2026-11-20T12:00:00Z"}"#)])
+        let status = try await service.recoveryMaterial(for: pendingFixture())
+        #expect(status == .pending(releaseEarliestAt: "2026-11-20T12:00:00Z"))
+        #expect(stub.requests[0].url?.path == "/api/recovery/session/\(sessionId)/material")
+        let device = try #require(try json(stub.requests[0])["replacementDevice"] as? [String: Any])
+        #expect(device["clientType"] as? String == "ios")
+    }
+
+    @Test func readyMaterialCarriesTheEnvelopeAndTheReplacementDevice() async throws {
+        let (service, _, _) = make([.init(body: #"{"status":"ready","recoveryEnvelope":{"ciphertext":"cc","nonce":"nn","version":1},"replacementDeviceId":"\#(recoveredDeviceId)"}"#)])
+        #expect(try await service.recoveryMaterial(for: pendingFixture())
+                == .ready(envelope: Envelope(ciphertext: "cc", nonce: "nn"), replacementDeviceId: recoveredDeviceId))
+    }
+
+    @Test func aPasskeyStepUpIsReportedNotAttempted() async throws {
+        let (service, _, _) = make([.init(body: #"{"status":"webauthn_required"}"#)])
+        #expect(try await service.recoveryMaterial(for: pendingFixture()) == .passkeyRequired)
+    }
+
+    @Test func aSessionTheServerForgotIsDroppedLocally() async throws {
+        let (starter, _, _) = make([challengeReply, redeemReply])
+        let pending = try await starter.startRecovery(serverUrl: url, email: "a@b.c", password: "pw", recoveryCode: "X")
+        let (service, _, _) = make([.init(status: 404)])
+        await #expect(throws: RecoveryError.sessionGone) { _ = try await service.recoveryMaterial(for: pending) }
+        #expect(try await service.pendingRecovery() == nil)
+    }
+
+    @Test func anUnknownStatusIsAnError() async throws {
+        let (service, _, _) = make([.init(body: #"{"status":"mystery"}"#)])
+        await #expect(throws: RecoveryError.unexpectedStatus("mystery")) { _ = try await service.recoveryMaterial(for: pendingFixture()) }
+        let (noEnvelope, _, _) = make([.init(body: #"{"status":"ready","replacementDeviceId":"d"}"#)])
+        await #expect(throws: RecoveryError.missingEnvelope) { _ = try await noEnvelope.recoveryMaterial(for: pendingFixture()) }
+    }
+
+    /// The recovery envelope the account holds: the vault key under the key derived from the password.
+    private func recoveryEnvelope(password: String, vaultKey: Data) throws -> Envelope {
+        try EnvelopeHelper.encrypt(key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: try authKey(password)), plaintext: vaultKey)
+    }
+
+    @Test func completingRecoveryAdoptsTheAccountKeyAndHandsOutNewCodes() async throws {
+        let password = "RecPassw0rd!"
+        let accountKey = KeyDerivation.generateVaultKey()
+        let envelope = try recoveryEnvelope(password: password, vaultKey: accountKey)
+        // A fresh device that already has a local vault (and an account or two) under its own key.
+        let localKey = try await repo.setupPassword("LocalPassw0rd!")
+        try await repo.addEntry(vaultKey: localKey, plaintext: VaultEntryPlaintext(issuer: "Local", accountName: "me", secret: "JBSWY3DPEHPK3PXP"))
+        let (service, stub, client) = make([challengeReply, .init(body: #"{"userId":"u1","accessToken":"AT","refreshToken":"RT"}"#)])
+
+        let result = try await service.completeRecovery(
+            pending: pendingFixture(), password: password, envelope: envelope, replacementDeviceId: recoveredDeviceId, localVaultKey: localKey)
+        #expect(result.vaultKey == accountKey && result.signedIn)
+        #expect(result.recoveryCodes.count == RecoveryCodes.count)
+
+        // Request: this device's envelope and the rotated recovery material both open to the account key.
+        #expect(stub.requests[1].url?.path == "/api/recovery/session/\(sessionId)/complete")
+        let body = try json(stub.requests[1])
+        #expect(body["replacementDeviceId"] as? String == recoveredDeviceId)
+        let deviceEnv = try #require(body["deviceEnvelope"] as? [String: Any])
+        let sent = Envelope(ciphertext: try #require(deviceEnv["ciphertext"] as? String), nonce: try #require(deviceEnv["nonce"] as? String))
+        #expect(try Ecdh.unpackDeviceEnvelope(sent, devicePrivateKey: try storedDeviceKey()) == accountKey)
+        let rotated = try #require(body["rotatedRecovery"] as? [String: Any])
+        let rotatedEnv = Envelope(ciphertext: try #require(rotated["recoveryEnvelopeCiphertext"] as? String),
+                                  nonce: try #require(rotated["recoveryEnvelopeNonce"] as? String))
+        #expect(try EnvelopeHelper.decrypt(key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: try authKey(password)), envelope: rotatedEnv) == accountKey)
+
+        // Device: connected, the recovery password opens the local vault to the account key (pinned KDF
+        // even though the test server's differs), local entries survived, the old biometric copy is gone.
+        #expect(try await repo.getSetting(SettingsKeys.mode) == SettingsKeys.modeConnected)
+        #expect(try await repo.getSetting(SettingsKeys.deviceId) == recoveredDeviceId)
+        #expect(try await repo.unlockVault(password: password) == accountKey)
+        #expect(try await repo.getAllEntries(vaultKey: accountKey).map(\.issuer) == ["Local"])
+        #expect(try secrets.get(.accessToken) == "AT")
+        let hasTokens = await client.hasTokens
+        #expect(hasTokens)
+        #expect(biometricCleared.get() == 1)
+        #expect(try await service.pendingRecovery() == nil)
+    }
+
+    @Test func aWrongPasswordIsCaughtBeforeAnythingIsSent() async throws {
+        let envelope = try recoveryEnvelope(password: "RecPassw0rd!", vaultKey: KeyDerivation.generateVaultKey())
+        let localKey = try await repo.setupPassword("LocalPassw0rd!")
+        let (starter, _, _) = make([challengeReply, redeemReply])
+        let pending = try await starter.startRecovery(serverUrl: url, email: "a@b.c", password: "RecPassw0rd!", recoveryCode: "X")
+        let (service, stub, _) = make([challengeReply])
+        await #expect(throws: RecoveryError.incorrectPassword) {
+            _ = try await service.completeRecovery(pending: pending, password: "wrong", envelope: envelope,
+                                                    replacementDeviceId: recoveredDeviceId, localVaultKey: localKey)
+        }
+        #expect(stub.requests.count == 1)                        // only the challenge
+        #expect(try await service.pendingRecovery() == pending)  // can try again
+        #expect(try await repo.unlockVault(password: "LocalPassw0rd!") == localKey)
+    }
+
+    @Test func aResponseWithoutTokensStillAdoptsTheKeyAndShowsTheCodes() async throws {
+        let password = "RecPassw0rd!"
+        let accountKey = KeyDerivation.generateVaultKey()
+        let localKey = try await repo.setupPassword("LocalPassw0rd!")
+        let (service, _, _) = make([challengeReply, .init(body: #"{"userId":"u1","accessToken":null,"refreshToken":null}"#)])
+        let result = try await service.completeRecovery(
+            pending: pendingFixture(), password: password, envelope: try recoveryEnvelope(password: password, vaultKey: accountKey),
+            replacementDeviceId: recoveredDeviceId, localVaultKey: localKey)
+        #expect(!result.signedIn && result.recoveryCodes.count == RecoveryCodes.count)
+        #expect(try await repo.getSetting(SettingsKeys.mode) == SettingsKeys.modeStandalone)
+        #expect(try await repo.unlockVault(password: password) == accountKey)
+    }
+
+    @Test func aSessionGoneAtTheLastStepIsReported() async throws {
+        let password = "RecPassw0rd!"
+        let localKey = try await repo.setupPassword("LocalPassw0rd!")
+        let (service, _, _) = make([challengeReply, .init(status: 404)])
+        await #expect(throws: RecoveryError.sessionGone) {
+            _ = try await service.completeRecovery(
+                pending: pendingFixture(), password: password,
+                envelope: try recoveryEnvelope(password: password, vaultKey: KeyDerivation.generateVaultKey()),
+                replacementDeviceId: recoveredDeviceId, localVaultKey: localKey)
+        }
+        #expect(try await repo.unlockVault(password: "LocalPassw0rd!") == localKey)   // nothing changed locally
+    }
+
     // MARK: Registration
 
     @Test func registerBuildsConsistentCryptoMaterial() async throws {

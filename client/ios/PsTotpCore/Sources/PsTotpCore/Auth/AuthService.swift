@@ -12,6 +12,56 @@ public enum ChangePasswordResult: Sendable, Equatable {
     case incorrectCurrentPassword
 }
 
+/// A recovery the server has accepted a code for but not yet released: kept across launches because
+/// the hold period (24 h by default) outlasts any screen, and the server allows one active session.
+public struct PendingRecovery: Codable, Equatable, Sendable {
+    public var sessionId: String
+    public var serverUrl: String
+    public var email: String
+    /// When the server will release the recovery material (ISO 8601).
+    public var releaseEarliestAt: String
+    /// The session needs a passkey step-up, which the app can't do yet.
+    public var requiresPasskey: Bool
+
+    public init(sessionId: String, serverUrl: String, email: String, releaseEarliestAt: String, requiresPasskey: Bool) {
+        self.sessionId = sessionId
+        self.serverUrl = serverUrl
+        self.email = email
+        self.releaseEarliestAt = releaseEarliestAt
+        self.requiresPasskey = requiresPasskey
+    }
+}
+
+public enum RecoveryMaterialStatus: Equatable, Sendable {
+    case passkeyRequired
+    case pending(releaseEarliestAt: String)
+    case ready(envelope: Envelope, replacementDeviceId: String)
+}
+
+public struct RecoveryResult: Sendable, Equatable {
+    public let vaultKey: Data
+    public let recoveryCodes: [String]
+    /// False if the server answered without tokens (the vault key and new codes are still valid).
+    public let signedIn: Bool
+}
+
+public enum RecoveryError: Error, Equatable, LocalizedError {
+    /// The server no longer knows the session (expired, cancelled or completed).
+    case sessionGone
+    case incorrectPassword
+    case unexpectedStatus(String)
+    case missingEnvelope
+
+    public var errorDescription: String? {
+        switch self {
+        case .sessionGone: "This recovery has expired or was cancelled. Start again with a recovery code."
+        case .incorrectPassword: "Incorrect password"
+        case .unexpectedStatus(let status): "Unexpected recovery status: \(status)"
+        case .missingEnvelope: "The server has no recovery material for this account."
+        }
+    }
+}
+
 public enum RegenerateCodesResult: Sendable, Equatable {
     case codes([String])
     /// The password doesn't match this vault's. Nothing was sent: the recovery envelope is wrapped
@@ -113,9 +163,7 @@ public final class AuthService: Sendable {
         // The local envelope must open with the pinned parameters, because that is what offline unlock
         // derives with. An account registered with other parameters (the server stores whatever the
         // registering client sent) would otherwise lock the user out of their own vault.
-        let localAuthKey = kdf.isPinnedDefault ? authKey : try await Self.offMainThread {
-            try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt)
-        }
+        let localAuthKey = try await Self.localAuthKey(kdf: kdf, serverAuthKey: authKey, password: password, salt: salt)
 
         // Adopt the server's vault key locally so offline password/biometric unlocks unwrap to the key
         // synced entries are encrypted with (a device that had its own local vault gets a different one).
@@ -279,6 +327,130 @@ public final class AuthService: Sendable {
                             recoveryCodeHashes: hashes, recoveryCodeSalt: salt.base64EncodedString()), codes)
     }
 
+    // MARK: Account recovery
+
+    /// The recovery that is waiting out its hold period, if any.
+    public func pendingRecovery() async throws -> PendingRecovery? {
+        guard let json = try await repository.getSetting(SettingsKeys.recoverySession) else { return nil }
+        return try? JSONDecoder().decode(PendingRecovery.self, from: Data(json.utf8))
+    }
+
+    public func forgetPendingRecovery() async throws {
+        try await repository.deleteSetting(SettingsKeys.recoverySession)
+    }
+
+    private func save(_ pending: PendingRecovery) async throws {
+        try await repository.setSetting(SettingsKeys.recoverySession, String(decoding: try JSONEncoder().encode(pending), as: UTF8.self))
+    }
+
+    /// Step 1: redeem a recovery code, proving the password through a step-up proof. The session is
+    /// saved so recovery can be resumed after the hold period.
+    public func startRecovery(serverUrl: String, email: String, password: String, recoveryCode: String) async throws -> PendingRecovery {
+        await prepare(serverUrl: serverUrl)
+        let ecdhKey = try loadOrGenerateEcdhKey()   // the same device identity in every recovery step
+        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
+
+        let challenge = try await authApi.requestLoginChallenge(email: email, device: device)
+        let kdf = challenge.challenge.kdf
+        guard let nonce = Data(base64Encoded: challenge.challenge.nonce),
+              let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
+        let authKey = try await Self.offMainThread {
+            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
+                            iterations: kdf.iterations, parallelism: kdf.parallelism)
+        }
+        let proof = try ClientProof.compute(verifier: KeyDerivation.deriveVerifier(authKey: authKey), nonce: nonce,
+                                            loginSessionId: challenge.loginSessionId)
+
+        let redeemed = try await recoveryApi.redeemRecoveryCode(
+            email: email, recoveryCode: recoveryCode,
+            verifierProof: ClientProofDto(loginSessionId: challenge.loginSessionId, clientProof: proof.base64EncodedString()))
+        let pending = PendingRecovery(
+            sessionId: redeemed.recoverySessionId, serverUrl: serverUrl, email: email,
+            releaseEarliestAt: redeemed.releaseEarliestAt, requiresPasskey: redeemed.requiresWebAuthn)
+        try await save(pending)
+        return pending
+    }
+
+    /// Step 2: ask whether the recovery material can be released yet. When it can, the server
+    /// registers this device as the replacement.
+    public func recoveryMaterial(for pending: PendingRecovery) async throws -> RecoveryMaterialStatus {
+        await prepare(serverUrl: pending.serverUrl)
+        let ecdhKey = try loadOrGenerateEcdhKey()
+        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
+        let material: RecoveryMaterialResponse
+        do {
+            material = try await recoveryApi.getRecoveryMaterial(sessionId: pending.sessionId, replacementDevice: device)
+        } catch ApiError.http(404, _) {
+            try await forgetPendingRecovery()
+            throw RecoveryError.sessionGone
+        }
+        switch material.status {
+        case "webauthn_required":
+            return .passkeyRequired
+        case "pending":
+            var updated = pending
+            if let release = material.releaseEarliestAt { updated.releaseEarliestAt = release }
+            try await save(updated)
+            return .pending(releaseEarliestAt: updated.releaseEarliestAt)
+        case "ready":
+            guard let envelope = material.recoveryEnvelope else { throw RecoveryError.missingEnvelope }
+            guard let deviceId = material.replacementDeviceId else { throw RecoveryError.unexpectedStatus("ready without a device") }
+            return .ready(envelope: envelope, replacementDeviceId: deviceId)
+        default:
+            throw RecoveryError.unexpectedStatus(material.status)
+        }
+    }
+
+    /// Step 3: open the recovery envelope with the password, rotate the recovery codes, give this device
+    /// its own envelope, and sign in. The account's vault key replaces the local one (local entries are
+    /// re-encrypted). A wrong password is caught before anything is sent.
+    public func completeRecovery(
+        pending: PendingRecovery, password: String, envelope: Envelope, replacementDeviceId: String, localVaultKey: Data
+    ) async throws -> RecoveryResult {
+        await prepare(serverUrl: pending.serverUrl)
+        let ecdhKey = try loadOrGenerateEcdhKey()   // the key getRecoveryMaterial registered
+        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
+
+        let challenge = try await authApi.requestLoginChallenge(email: pending.email, device: device)
+        let kdf = challenge.challenge.kdf
+        guard let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
+        let authKey = try await Self.offMainThread {
+            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
+                            iterations: kdf.iterations, parallelism: kdf.parallelism)
+        }
+
+        let vaultKey: Data
+        do {
+            vaultKey = try EnvelopeHelper.decrypt(key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: authKey), envelope: envelope)
+        } catch CryptoError.decryptionFailed {
+            throw RecoveryError.incorrectPassword
+        }
+
+        let (rotated, newCodes) = try await Self.makeRecovery(authKey: authKey, vaultKey: vaultKey)
+        let deviceEnvelope = try Ecdh.packDeviceEnvelope(vaultKey: vaultKey, recipientPublicKey: ecdhKey.publicKey)
+
+        let response: RefreshResponse
+        do {
+            response = try await recoveryApi.completeRecovery(
+                sessionId: pending.sessionId, replacementDeviceId: replacementDeviceId,
+                deviceEnvelope: deviceEnvelope, rotatedRecovery: rotated)
+        } catch ApiError.http(404, _) {
+            try await forgetPendingRecovery()
+            throw RecoveryError.sessionGone
+        }
+
+        // The server has changed (codes rotated, session completed): from here on, keep what we have even
+        // if the response carries no tokens, because the new codes must still reach the user.
+        try await persistTokens(response.accessToken, response.refreshToken)
+        let signedIn = response.accessToken != nil && response.refreshToken != nil
+        let localKey = try await Self.localAuthKey(kdf: kdf, serverAuthKey: authKey, password: password, salt: salt)
+        try await adopt(vaultKey: vaultKey, replacing: localVaultKey, salt: salt, authKey: localKey,
+                        session: (pending.serverUrl, response.userId ?? replacementDeviceId, replacementDeviceId, pending.email),
+                        connected: signedIn)
+        try await forgetPendingRecovery()
+        return RecoveryResult(vaultKey: vaultKey, recoveryCodes: newCodes, signedIn: signedIn)
+    }
+
     // MARK: Logout
 
     /// Best-effort server logout; local state is always cleaned up, even offline. The device key stays.
@@ -325,7 +497,8 @@ public final class AuthService: Sendable {
     /// old key is removed.
     private func adopt(
         vaultKey: Data, replacing localVaultKey: Data, salt: Data, authKey: Data,
-        session: (serverUrl: String, userId: String, deviceId: String, email: String)
+        session: (serverUrl: String, userId: String, deviceId: String, email: String),
+        connected: Bool = true
     ) async throws {
         let verifier = KeyDerivation.deriveVerifier(authKey: authKey)
         let wrapped = try AesGcm.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: authKey), plaintext: vaultKey)
@@ -335,7 +508,7 @@ public final class AuthService: Sendable {
             SettingsKeys.encryptedVaultKey: wrapped.base64EncodedString(),
             SettingsKeys.serverUrl: session.serverUrl, SettingsKeys.userId: session.userId,
             SettingsKeys.deviceId: session.deviceId, SettingsKeys.email: session.email,
-            SettingsKeys.mode: SettingsKeys.modeConnected,
+            SettingsKeys.mode: connected ? SettingsKeys.modeConnected : SettingsKeys.modeStandalone,
         ])
         // A stale biometric copy would decrypt to the old key and break entry decryption.
         if vaultKey != localVaultKey { await invalidateBiometric() }
@@ -375,6 +548,14 @@ public final class AuthService: Sendable {
     private func rebuildDeviceEnvelope(vaultKey: Data, key: Ecdh.PrivateKey) async {
         guard let envelope = try? Ecdh.packDeviceEnvelope(vaultKey: vaultKey, recipientPublicKey: key.publicKey) else { return }
         try? await devicesApi.updateSelfEnvelope(envelope)
+    }
+
+    /// The key for the local password envelope: the one derived for the server when its parameters are
+    /// the pinned ones, otherwise a second derivation with them (offline unlock always uses those).
+    private static func localAuthKey(kdf: KdfConfig, serverAuthKey: Data, password: String, salt: Data) async throws -> Data {
+        kdf.isPinnedDefault ? serverAuthKey : try await offMainThread {
+            try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt)
+        }
     }
 
     /// Argon2 is deliberately expensive; keep it off the caller's executor.

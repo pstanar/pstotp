@@ -586,4 +586,91 @@ struct AppModelConnectionTests {
         _ = await model.revokePasskey(id: "c1")
         if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
     }
+
+    // MARK: Account recovery
+
+    private let recoverySession = "11111111-2222-3333-4444-555555555555"
+
+    private func redeemReply(passkey: Bool = false) -> ScriptedTransport.Reply {
+        .init(body: #"{"recoverySessionId":"\#(recoverySession)","requiresWebAuthn":\#(passkey),"releaseEarliestAt":"2026-11-20T10:00:00Z"}"#)
+    }
+
+    private func challengeReply() throws -> ScriptedTransport.Reply {
+        try loginReplies(password: "x", serverKey: KeyDerivation.generateVaultKey())[0]
+    }
+
+    @Test func startingARecoveryIsRememberedAcrossLaunches() async throws {
+        let (model, transport) = await unlockedModel([try challengeReply(), redeemReply()])
+        guard case .success(let pending) = await model.startRecovery(serverUrl: "x.test", email: " a@b.c ", password: "pw", code: " ABCDEFGHJK ")
+        else { Issue.record("start failed"); return }
+        #expect(pending.sessionId == recoverySession && pending.email == "a@b.c" && pending.serverUrl == "https://x.test/api")
+        #expect(transport.authPaths.last == "/api/recovery/codes/redeem")
+
+        let relaunch = await restarted()
+        #expect(await relaunch.pendingRecovery() == pending)
+        await relaunch.forgetRecovery()
+        #expect(await relaunch.pendingRecovery() == nil)
+    }
+
+    @Test func recoveryProgressFollowsTheServer() async throws {
+        let (model, _) = await unlockedModel([
+            .init(body: #"{"status":"pending","releaseEarliestAt":"2026-11-20T12:00:00Z"}"#),
+            .init(body: #"{"status":"webauthn_required"}"#),
+            .init(body: #"{"status":"ready","recoveryEnvelope":{"ciphertext":"cc","nonce":"nn","version":1},"replacementDeviceId":"dev"}"#),
+            .init(status: 404),
+        ])
+        let pending = PendingRecovery(sessionId: recoverySession, serverUrl: "https://x.test/api", email: "a@b.c",
+                                      releaseEarliestAt: "2026-11-20T10:00:00Z", requiresPasskey: false)
+        var waiting = pending
+        waiting.releaseEarliestAt = "2026-11-20T12:00:00Z"
+        #expect(await model.checkRecovery(pending) == .waiting(waiting))
+        #expect(await model.checkRecovery(pending) == .needsPasskey(pending))
+        #expect(await model.checkRecovery(pending) == .ready(pending, envelope: Envelope(ciphertext: "cc", nonce: "nn"), replacementDeviceId: "dev"))
+        #expect(await model.checkRecovery(pending)
+                == .failed("This recovery has expired or was cancelled. Start again with a recovery code."))
+    }
+
+    @Test func finishingARecoveryKeepsTheLocalAccountsAndSignsIn() async throws {
+        let password = "RecPassw0rd!"
+        let accountKey = KeyDerivation.generateVaultKey()
+        let authKey = try Argon2.hash(password: password, salt: salt, memoryMb: 32, iterations: 2, parallelism: 1)
+        let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: authKey), plaintext: accountKey)
+        let (model, transport) = await unlockedModel([
+            try challengeReply(), .init(body: #"{"userId":"u1","accessToken":"AT","refreshToken":"RT"}"#)])
+        let pending = PendingRecovery(sessionId: recoverySession, serverUrl: "https://x.test/api", email: "a@b.c",
+                                      releaseEarliestAt: "2026-11-20T10:00:00Z", requiresPasskey: false)
+
+        guard case .success(let codes) = await model.completeRecovery(pending, password: password, envelope: envelope, replacementDeviceId: "dev-1")
+        else { Issue.record("recovery failed: \(model.errorMessage ?? "")"); return }
+        #expect(codes.count == RecoveryCodes.count)
+        #expect(model.connection == .connected(serverUrl: "https://x.test/api", email: "a@b.c"))
+        #expect(model.entries.map(\.issuer) == ["GitHub", "AWS"])
+        #expect(transport.authPaths.last == "/api/recovery/session/\(recoverySession)/complete")
+        await model.waitForPendingSync()
+
+        // The recovery password now unlocks this device's vault, with the account's key.
+        let relaunch = await restarted()
+        #expect(await relaunch.unlock(password: password))
+        #expect(relaunch.entries.count == 2)
+    }
+
+    @Test func aWrongPasswordWhenFinishingChangesNothing() async throws {
+        let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.generateVaultKey(), plaintext: KeyDerivation.generateVaultKey())
+        let (model, transport) = await unlockedModel([try challengeReply()])
+        let pending = PendingRecovery(sessionId: recoverySession, serverUrl: "https://x.test/api", email: "a@b.c",
+                                      releaseEarliestAt: "2026-11-20T10:00:00Z", requiresPasskey: false)
+        guard case .failure(let failure) = await model.completeRecovery(pending, password: "wrong", envelope: envelope, replacementDeviceId: "d")
+        else { Issue.record("expected a failure"); return }
+        #expect(failure.message == "Incorrect password")
+        #expect(model.connection == .standalone)
+        #expect(transport.authPaths == ["/api/auth/login"])      // only the challenge was requested
+    }
+
+    @Test func startingRecoveryNeedsAValidAddress() async {
+        let (model, transport) = await unlockedModel([])
+        guard case .failure(let failure) = await model.startRecovery(serverUrl: "ftp://x", email: "a@b.c", password: "pw", code: "X")
+        else { Issue.record("expected a failure"); return }
+        #expect(failure.message == "Enter a valid server address")
+        #expect(transport.paths.isEmpty)
+    }
 }

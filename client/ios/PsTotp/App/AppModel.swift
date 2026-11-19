@@ -434,6 +434,70 @@ final class AppModel {
         }
     }
 
+    // MARK: Account recovery
+
+    /// Where a recovery stands after asking the server.
+    enum RecoveryProgress: Equatable {
+        /// Still inside the hold period; check again after `releaseEarliestAt`.
+        case waiting(PendingRecovery)
+        /// The session needs a passkey step-up, which the app can't do yet.
+        case needsPasskey(PendingRecovery)
+        case ready(PendingRecovery, envelope: Envelope, replacementDeviceId: String)
+        case failed(String)
+    }
+
+    func pendingRecovery() async -> PendingRecovery? { try? await auth.pendingRecovery() }
+
+    func forgetRecovery() async { try? await auth.forgetPendingRecovery() }
+
+    /// Redeem a recovery code. The password is proven here and needed again to finish.
+    func startRecovery(serverUrl: String, email: String, password: String, code: String) async -> Result<PendingRecovery, ConnectionFailure> {
+        guard let url = ServerURL.normalize(serverUrl) else { return .failure(.init(message: "Enter a valid server address")) }
+        do {
+            return .success(try await auth.startRecovery(
+                serverUrl: url, email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                password: password, recoveryCode: code.trimmingCharacters(in: .whitespacesAndNewlines)))
+        } catch {
+            return .failure(.init(message: Self.connectionMessage(error)))
+        }
+    }
+
+    func checkRecovery(_ pending: PendingRecovery) async -> RecoveryProgress {
+        do {
+            switch try await auth.recoveryMaterial(for: pending) {
+            case .passkeyRequired: return .needsPasskey(pending)
+            case .pending(let release):
+                var updated = pending
+                updated.releaseEarliestAt = release
+                return .waiting(updated)
+            case .ready(let envelope, let deviceId): return .ready(pending, envelope: envelope, replacementDeviceId: deviceId)
+            }
+        } catch {
+            return .failed(Self.connectionMessage(error))
+        }
+    }
+
+    /// Finish recovery: the account's vault key replaces the local one and this device is signed in.
+    /// - Returns: the new recovery codes to show, or a message.
+    func completeRecovery(
+        _ pending: PendingRecovery, password: String, envelope: Envelope, replacementDeviceId: String
+    ) async -> Result<[String], ConnectionFailure> {
+        guard let key = vaultKey else { return .failure(.init(message: "Vault is locked")) }
+        do {
+            let result = try await auth.completeRecovery(
+                pending: pending, password: password, envelope: envelope,
+                replacementDeviceId: replacementDeviceId, localVaultKey: key)
+            guard await adoptKey(result.vaultKey) else { return .failure(.init(message: errorMessage ?? "Recovery failed")) }
+            if result.signedIn {
+                connection = .connected(serverUrl: pending.serverUrl, email: pending.email)
+                requestSync()
+            }
+            return .success(result.recoveryCodes)
+        } catch {
+            return .failure(.init(message: Self.connectionMessage(error)))
+        }
+    }
+
     // MARK: Passkeys
 
     /// The account's registered passkeys. (Adding one and signing in with one need the platform's
