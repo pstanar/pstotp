@@ -95,9 +95,16 @@ public final class AuthService: Sendable {
             return .error("No envelope available to decrypt vault key")
         }
 
+        // The local envelope must open with the pinned parameters, because that is what offline unlock
+        // derives with. An account registered with other parameters (the server stores whatever the
+        // registering client sent) would otherwise lock the user out of their own vault.
+        let localAuthKey = kdf.isPinnedDefault ? authKey : try await Self.offMainThread {
+            try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt)
+        }
+
         // Adopt the server's vault key locally so offline password/biometric unlocks unwrap to the key
         // synced entries are encrypted with (a device that had its own local vault gets a different one).
-        try await adopt(vaultKey: serverVaultKey, replacing: localVaultKey, salt: salt, authKey: authKey,
+        try await adopt(vaultKey: serverVaultKey, replacing: localVaultKey, salt: salt, authKey: localAuthKey,
                         session: (serverUrl, result.userId, result.device.deviceId, email))
         await rebuildDeviceEnvelope(vaultKey: serverVaultKey, key: ecdhKey)
         return .approved(serverVaultKey: serverVaultKey)

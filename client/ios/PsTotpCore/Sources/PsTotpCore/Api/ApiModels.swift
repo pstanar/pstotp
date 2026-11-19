@@ -27,6 +27,11 @@ public struct KdfConfig: Codable, Equatable, Sendable {
         self.salt = salt
     }
 
+    /// Whether these are the pinned parameters every client uses for the local password envelope.
+    public var isPinnedDefault: Bool {
+        algorithm == "argon2id" && memoryMb == 64 && iterations == 3 && parallelism == 4
+    }
+
     /// The pinned defaults (Argon2id, 64 MB, t=3, p=4) with the given base64 salt.
     public static func `default`(saltBase64: String) -> KdfConfig {
         KdfConfig(algorithm: "argon2id", memoryMb: 64, iterations: 3, parallelism: 4, salt: saltBase64)

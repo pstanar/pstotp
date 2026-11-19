@@ -96,14 +96,41 @@ struct AuthServiceTests {
         #expect(await client.hasTokens)
         #expect(try await service.isConnected())
         let stored = try #require(try await repo.getSetting(SettingsKeys.encryptedVaultKey))
-        let storedData = try #require(Data(base64Encoded: stored))
-        let localKey = try AesGcm.decrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: ak), payload: storedData)
-        #expect(localKey == serverKey)
+        #expect(!stored.isEmpty)
         #expect(biometricCleared.get() == 1)
+
+        // Offline unlock derives with the pinned parameters, not the server's (32 MiB here): the
+        // same password must still open the local vault, with the server's key.
+        #expect(try await repo.unlockVault(password: password) == serverKey)
 
         // The device envelope was refreshed for future device-key logins.
         #expect(stub.requests[2].url?.path == "/api/devices/self/envelope")
         #expect(stub.requests[2].httpMethod == "PUT")
+    }
+
+    @Test func anAccountWithTheDefaultParametersReusesTheDerivedKey() async throws {
+        // 64 MiB / t=3 / p=4: the local envelope can use the key derived for the login proof.
+        let password = "default params"
+        let serverKey = KeyDerivation.generateVaultKey()
+        let ak = try Argon2.hash(password: password, salt: salt)
+        let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: ak), plaintext: serverKey)
+        let (service, _, _) = make([
+            .init(body: """
+            {"loginSessionId":"\(guid)","challenge":{"nonce":"\(nonce.base64EncodedString())",
+             "kdf":{"algorithm":"argon2id","memoryMb":64,"iterations":3,"parallelism":4,"salt":"\(salt.base64EncodedString())"}}}
+            """),
+            .init(body: """
+            {"userId":"u","accessToken":"AT","refreshToken":"RT","device":{"deviceId":"d","status":"approved"},"envelopes":{"password":\(envelopeJSON(envelope))}}
+            """), .init()])
+        #expect(try await service.login(serverUrl: url, email: "a@b.c", password: password, localVaultKey: localKey0) == .approved(serverVaultKey: serverKey))
+        #expect(try await repo.unlockVault(password: password) == serverKey)
+    }
+
+    @Test func kdfParametersAreRecognisedAsPinnedOrNot() {
+        #expect(KdfConfig.default(saltBase64: "x").isPinnedDefault)
+        #expect(!KdfConfig(algorithm: "argon2id", memoryMb: 128, iterations: 3, parallelism: 4, salt: "x").isPinnedDefault)
+        #expect(!KdfConfig(algorithm: "argon2id", memoryMb: 64, iterations: 2, parallelism: 4, salt: "x").isPinnedDefault)
+        #expect(!KdfConfig(algorithm: "argon2id", memoryMb: 64, iterations: 3, parallelism: 8, salt: "x").isPinnedDefault)
     }
 
     @Test func loginPrefersTheDeviceEnvelope() async throws {

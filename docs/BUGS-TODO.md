@@ -77,6 +77,21 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   `pendingSync`) after the request returns, even if the entry changed meanwhile; the newer edit is never pushed.
   Fix: clear the flag only if the payload is unchanged. (iOS does.)
 
+- [ ] **Offline unlock breaks if the account's KDF isn't the default (Suspected, likely)** — the server stores
+  whatever KDF parameters the registering client sends (`RegistrationEndpoints.cs:162`, `AccountEndpoints.cs:50`;
+  no validation) and returns them at login. `AuthService.login` derives `authKey` with those parameters and passes it
+  to `persistPasswordEnvelope`, which stores the local verifier and wrapped vault key from it. Offline unlock
+  (`KeyDerivation.derivePasswordAuthKey` → `Argon2.hash(password, salt)`) always uses the pinned 64 MB / t=3 / p=4,
+  so for an account with other parameters (above the 32 MB / 2 / 1 floor) it derives a different key: "Incorrect
+  password" at the lock screen, and Connect needs an unlocked vault, so no way back in. All three clients
+  currently register with 64/3/4, so this needs a modified client or server. Same code path:
+  `passkeyUnlockWithPassword`, `changePassword` (derives new material with the default, fine), recovery.
+  Fix: in `login` / `passkeyUnlockWithPassword`, when `kdf != default`, derive a second `authKey` with the pinned
+  parameters (same salt) for `persistPasswordEnvelope`; keep the server-parameter key for the proof and envelope
+  decryption. (iOS: `AuthService.login`, `KdfConfig.isPinnedDefault`; test
+  `loginWithPasswordEnvelopeAdoptsTheServerVaultKey`.) The passkey path doesn't exist on iOS yet: apply the same
+  rule when it is ported.
+
 ### Web client
 
 - [ ] **`parseOtpauthUri` accepts `NaN` digits/period (Verified)** — `totp.ts` uses `parseInt` and then
@@ -97,6 +112,13 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   - Moderate: `vite` → 8.1.6 (#37, GHSA-r825-w8mm-5pxw; #35, GHSA-698v-4r3x-3vcv, both launch-editor);
     `vitest` and `@vitest/mocker` → 4.1.11 (#31, #30, GHSA-82fw-gwwq-j7x9, file read via redirect mock);
     `baseline-browser-mapping` → 2.11.0 (#32, GHSA-w5vr-8v7q-w6rv, DoS on invalid input)
+
+- [ ] **No floor on server-supplied KDF parameters (Suspected)** — `derivePasswordAuthKey` runs Argon2id with
+  whatever `challenge.kdf` the server returns (login, recovery, step-up, change password). A hostile or compromised
+  server could return e.g. 1 MB / 1 iteration and then brute-force the captured proof offline. Android and iOS
+  reject anything below 32 MB / 2 iterations / 1 lane (`Argon2.hash` with the floors). Fix: same minimums in
+  `derivePasswordAuthKey`, with a clear error. (Not affected by the offline-unlock issue above: the web client
+  keeps no local password envelope and uses the server's parameters in every flow.)
 
 ### Server
 

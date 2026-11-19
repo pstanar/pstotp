@@ -65,9 +65,10 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 40 | An edit made while its push is in flight | The pending flag is cleared when the push returns, so the newer edit is never sent. | Cleared only if the entry is unchanged since it was read. | Android can lose the edit. | internal | |
 | 41 | Reordering on another device | Applied only when the entry's version also changed, so a pure reorder never reaches other devices. | A pulled sort order is applied to entries with no unsent change, version or not. | The server's reorder doesn't bump versions. | internal | |
 | 42 | After the session expires | The app shows the Connect button with no explanation. | Settings says the session expired and offers "Sign in again" with the server and email filled in. | Clearer. | cosmetic | |
+| 43 | Local password envelope when the account's KDF isn't the default | Derived with the server's parameters, so offline unlock (which uses the pinned 64 MB / t=3 / p=4) can fail. | A second key is derived with the pinned parameters for the local envelope. | Avoids locking the user out of their own vault. | internal | |
 
 ## Not ported yet (pending, not differences)
 
-the icon library's server sync, connected mode: the icon library's sync, passkey login, devices,
-audit, account recovery (password sign-in and registration are done; the connected-only Change Password, Devices, Audit Log, Passkeys,
-Recovery Codes buttons).
+Password sign-in, registration and vault sync are done. Still to do: the icon library's server sync, passkey
+login, account recovery, and the connected-only Change Password, Devices, Audit Log, Passkeys and Recovery Codes
+buttons in Settings.
