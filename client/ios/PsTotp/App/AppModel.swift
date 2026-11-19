@@ -63,6 +63,7 @@ final class AppModel {
     private let iconSync: IconLibrarySyncService?
     private let devicesApi: DevicesApi?
     private let auditApi: AuditApi?
+    private let webAuthnApi: WebAuthnApi?
     /// The in-memory library came from (or was reconciled with) the server this session, so editing it
     /// can't overwrite the account's real library with a stale local copy.
     private var libraryHydrated = false
@@ -97,6 +98,7 @@ final class AppModel {
         self.iconSync = server.iconSync
         self.devicesApi = server.devices
         self.auditApi = server.audit
+        self.webAuthnApi = server.webAuthn
     }
 
     /// Authentication and sync, sharing one API client (so they share one set of tokens).
@@ -106,6 +108,7 @@ final class AppModel {
         let iconSync: IconLibrarySyncService?
         let devices: DevicesApi?
         let audit: AuditApi?
+        let webAuthn: WebAuthnApi?
     }
 
     /// - Parameter db: Needed for sync; nil builds a session without it (tests of other features).
@@ -125,7 +128,8 @@ final class AppModel {
             sync: db.map { SyncService(db: $0, client: client, repository: repository) },
             iconSync: db.map { IconLibrarySyncService(library: IconLibraryRepository(db: $0), client: client) },
             devices: DevicesApi(client: client),
-            audit: AuditApi(client: client))
+            audit: AuditApi(client: client),
+            webAuthn: WebAuthnApi(client: client))
     }
 
     // MARK: Startup
@@ -424,6 +428,42 @@ final class AppModel {
         }
         do {
             try await devicesApi.revokeDevice(deviceId: device.deviceId)
+            return nil
+        } catch {
+            return "Revoke failed: \(deviceFailure(error))"
+        }
+    }
+
+    // MARK: Passkeys
+
+    /// The account's registered passkeys. (Adding one and signing in with one need the platform's
+    /// passkey ceremony, which isn't ported yet.)
+    func loadPasskeys() async -> Result<[WebAuthnCredentialInfo], ConnectionFailure> {
+        guard let webAuthnApi else { return .failure(.init(message: "Not connected")) }
+        do {
+            return .success(try await webAuthnApi.listCredentials())
+        } catch {
+            return .failure(.init(message: deviceFailure(error)))
+        }
+    }
+
+    /// - Returns: nil on success, otherwise a message for the user.
+    func renamePasskey(id: String, to name: String) async -> String? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return "Enter a name" }
+        guard let webAuthnApi else { return "Not connected" }
+        do {
+            try await webAuthnApi.renameCredential(credentialId: id, friendlyName: name)
+            return nil
+        } catch {
+            return "Rename failed: \(deviceFailure(error))"
+        }
+    }
+
+    func revokePasskey(id: String) async -> String? {
+        guard let webAuthnApi else { return "Not connected" }
+        do {
+            try await webAuthnApi.revokeCredential(credentialId: id)
             return nil
         } catch {
             return "Revoke failed: \(deviceFailure(error))"

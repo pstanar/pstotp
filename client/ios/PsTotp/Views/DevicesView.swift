@@ -150,16 +150,8 @@ private struct DeviceRow: View {
     private var detail: String {
         switch device.status {
         case "pending": "Waiting for approval"
-        case "approved": device.approvedAt.map { "Approved \(Self.date($0))" } ?? "Approved"
-        default: device.revokedAt.map { "Revoked \(Self.date($0))" } ?? "Revoked"
+        case "approved": device.approvedAt.map { "Approved \(ServerTime.day($0))" } ?? "Approved"
+        default: device.revokedAt.map { "Revoked \(ServerTime.day($0))" } ?? "Revoked"
         }
-    }
-
-    private static func date(_ iso: String) -> String {
-        let plain = ISO8601DateFormatter()
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else { return iso }
-        return date.formatted(date: .abbreviated, time: .omitted)
     }
 }

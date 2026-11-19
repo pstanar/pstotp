@@ -72,5 +72,14 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 
 ## Not ported yet (pending, not differences)
 
-Password sign-in, registration, vault sync, the icon library's sync, Change Password, Devices, the Audit Log and Recovery Codes are done. Still to do: passkey
-login, account recovery, and the connected-only Passkeys button in Settings.
+Password sign-in, registration, vault sync, the icon library's sync, Change Password, Devices, the Audit Log,
+Recovery Codes and passkey management (list, rename, revoke) are done. Still to do:
+
+- **Adding a passkey and signing in with one.** Native iOS passkeys need (1) an Associated Domains entitlement
+  `webcredentials:<server domain>` compiled into the app, so a generic build can't serve arbitrary self-hosted
+  servers (Android's Credential Manager has no such declaration), (2) a paid Apple Developer team for that
+  capability, (3) the server hosting `/.well-known/apple-app-site-association` for the app (it only serves
+  `assetlinks.json` today), and (4) translating the server's WebAuthn JSON to and from AuthenticationServices
+  by hand (the SDK has no JSON API). Deferred by decision; the Passkeys screen says to add one elsewhere.
+  Unverifiable on the simulator.
+- Account recovery (lost all devices): redeem a recovery code, wait out the hold, complete.

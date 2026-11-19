@@ -36,3 +36,22 @@ struct AuditFormatTests {
         #expect(AuditFormat.timestamp("short") == "short")
     }
 }
+
+@Suite("ServerTime")
+struct ServerTimeTests {
+    private let us = Locale(identifier: "en_US")
+    private let utc = TimeZone(identifier: "UTC")!
+
+    @Test func showsTheDayAndTheTime() {
+        #expect(ServerTime.day("2026-11-19T23:30:00.1234567Z", timeZone: utc, locale: us) == "Nov 19, 2026")
+        #expect(ServerTime.day("2026-11-19T23:30:00Z", timeZone: TimeZone(identifier: "Asia/Tokyo")!, locale: us) == "Nov 20, 2026")
+        let both = ServerTime.dateTime("2026-11-19T10:30:00Z", timeZone: utc, locale: us)
+        #expect(both.contains("Nov 19, 2026") && both.contains("10:30"))
+    }
+
+    @Test func unreadableTextFallsBack() {
+        #expect(ServerTime.day("2026-11-19 garbage") == "2026-11-19")
+        #expect(ServerTime.dateTime("garbage") == "garbage")
+        #expect(ServerTime.date("") == nil)
+    }
+}

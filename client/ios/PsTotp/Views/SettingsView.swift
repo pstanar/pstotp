@@ -91,6 +91,8 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.devices")
                     NavigationLink("Audit Log") { AuditLogView(model: model) }
                         .accessibilityIdentifier("settings.auditLog")
+                    NavigationLink("Passkeys") { PasskeysView(model: model) }
+                        .accessibilityIdentifier("settings.passkeys")
                     NavigationLink("Recovery Codes") { RecoveryCodesView(model: model) }
                         .accessibilityIdentifier("settings.recoveryCodes")
                     NavigationLink("Change Password") { ChangePasswordView(model: model) }
@@ -168,7 +170,7 @@ struct SettingsView: View {
 
     @ViewBuilder private var syncRows: some View {
         if let last = model.lastSyncAt {
-            LabeledContent("Last sync", value: Self.syncTime(last))
+            LabeledContent("Last sync", value: ServerTime.dateTime(last))
                 .accessibilityIdentifier("settings.lastSync")
         }
         if case .failed(let message) = model.syncState {
@@ -187,15 +189,6 @@ struct SettingsView: View {
         }
         .disabled(model.syncState == .syncing)
         .accessibilityIdentifier("settings.syncNow")
-    }
-
-    /// The server's ISO 8601 time in the user's locale; the raw text if it can't be read.
-    static func syncTime(_ iso: String) -> String {
-        let plain = ISO8601DateFormatter()
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else { return iso }
-        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     private func setBiometrics(_ enabled: Bool) {

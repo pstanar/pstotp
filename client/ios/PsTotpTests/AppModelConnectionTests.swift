@@ -19,6 +19,12 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
     var deviceActionStatus = 200
     /// What GET /security/audit-events returns, and its status.
     var auditBody = #"{"events":[]}"#
+    /// What GET /webauthn/credentials returns, and the status for passkey actions.
+    var passkeysBody = #"{"credentials":[]}"#
+    var passkeyActionStatus = 200
+    /// "METHOD /path" for every /webauthn request.
+    private(set) var passkeyRequests: [String] = []
+    private(set) var lastPasskeyBody: Data?
     var auditStatus = 200
     private(set) var auditPaths: [String] = []
     /// "METHOD /path" for every /devices request.
@@ -38,6 +44,12 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
         let path = request.url?.path ?? ""
         let reply = lock.withLock { () -> Reply in
             paths.append(path)
+            if path.hasPrefix("/api/webauthn/") {
+                passkeyRequests.append("\(request.httpMethod ?? "") \(path.dropFirst("/api".count))")
+                lastPasskeyBody = request.httpBody
+                if request.httpMethod == "GET" { return Reply(body: passkeysBody) }
+                return Reply(status: passkeyActionStatus)
+            }
             if path == "/api/security/audit-events" {
                 auditPaths.append(request.url?.absoluteString ?? "")
                 return auditStatus == 200 ? Reply(body: auditBody) : Reply(status: auditStatus)
@@ -528,6 +540,50 @@ struct AppModelConnectionTests {
         let challenge = try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey())[0]
         let (model, _) = try await connectedModel(extra: [challenge, .init(status: 401), .init(status: 401)])
         _ = await model.regenerateRecoveryCodes(password: "pw")
+        if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
+    }
+
+    // MARK: Passkeys
+
+    @Test func passkeysAreListedWithTheirDates() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        transport.passkeysBody = """
+        {"credentials":[
+          {"id":"c1","friendlyName":"MacBook","createdAt":"2026-10-01T08:00:00Z","lastUsedAt":"2026-11-02T09:00:00Z"},
+          {"id":"c2","friendlyName":null,"createdAt":"2026-09-01T08:00:00Z","lastUsedAt":null}]}
+        """
+        guard case .success(let passkeys) = await model.loadPasskeys() else { Issue.record("load failed"); return }
+        #expect(passkeys.map(\.id) == ["c1", "c2"])
+        #expect(passkeys[0].friendlyName == "MacBook" && passkeys[1].friendlyName == nil && passkeys[1].lastUsedAt == nil)
+        #expect(transport.passkeyRequests == ["GET /webauthn/credentials"])
+    }
+
+    @Test func renamingTrimsTheNameAndRefusesABlankOne() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        #expect(await model.renamePasskey(id: "c1", to: "   ") == "Enter a name")
+        #expect(transport.passkeyRequests.isEmpty)
+
+        #expect(await model.renamePasskey(id: "c1", to: "  Work laptop ") == nil)
+        #expect(transport.passkeyRequests == ["PUT /webauthn/credentials/c1/rename"])
+        let sent = try #require(transport.lastPasskeyBody)
+        let body = try #require(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
+        #expect(body["friendlyName"] as? String == "Work laptop")
+    }
+
+    @Test func revokingCallsTheServerAndFailuresAreShown() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        #expect(await model.revokePasskey(id: "c1") == nil)
+        #expect(transport.passkeyRequests == ["POST /webauthn/credentials/c1/revoke"])
+
+        transport.passkeyActionStatus = 404
+        #expect(await model.revokePasskey(id: "gone") == "Revoke failed: Not found (HTTP 404)")
+        #expect(model.connection != .standalone)
+    }
+
+    @Test func anExpiredSessionWhileManagingPasskeysAsksToSignInAgain() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        transport.passkeyActionStatus = 401
+        _ = await model.revokePasskey(id: "c1")
         if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
     }
 }

@@ -14,13 +14,7 @@ public enum AuditFormat {
         return result
     }
 
-    /// The server's ISO 8601 time (any number of fractional digits) as a date; nil when unreadable.
-    public static func date(_ iso: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
-        return fractional.date(from: iso) ?? plain.date(from: iso)
-    }
+    public static func date(_ iso: String) -> Date? { ServerTime.date(iso) }
 
     /// `Nov 19, 12:30` in the user's time zone and locale; the first 16 characters of the raw text
     /// when it can't be read, like Android.

@@ -159,6 +159,13 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   `RecoveryCodeRegenerateRequest` and verify it as password change does; the proof and the envelope key come from
   the same derived key, so a typo then becomes impossible, and the web workaround can go. Hardening, not a defect
   in existing behaviour.
+- [ ] **Gap: no `apple-app-site-association` endpoint (iOS passkeys)** — `MapWellKnownEndpoints` serves
+  `/.well-known/assetlinks.json` (from `Android:PackageName` / `Android:CertFingerprints`) but nothing for iOS.
+  Native iOS passkeys need `https://<rp domain>/.well-known/apple-app-site-association` listing
+  `webcredentials.apps: ["<TeamID>.<bundle id>"]`, plus an Associated Domains entitlement in the app for that
+  domain. Only needed if iOS passkey add/sign-in is ever implemented (deferred, see `client/ios/DIFFERENCES.md`).
+  Suggested config: `Apple:AppIds`. Also confirm the server accepts the origin an iOS native passkey reports
+  (`https://<rp id>`) against `Fido2:Origins`.
 
 ## Done
 
