@@ -349,6 +349,44 @@ struct AuthServiceTests {
         #expect(try await repo.unlockVault(password: "OldPassw0rd!") == vaultKey)
     }
 
+    // MARK: Recovery codes
+
+    @Test func regeneratingGivesNewCodesWhoseEnvelopeRecoveryCanOpen() async throws {
+        let (service, stub, _, vaultKey) = try await connectedService([challengeReply, .init()])
+        let result = try await service.regenerateRecoveryCodes(email: "a@b.c", password: "OldPassw0rd!", vaultKey: vaultKey)
+        guard case .codes(let codes) = result else { Issue.record("expected codes, got \(result)"); return }
+        #expect(codes.count == RecoveryCodes.count && Set(codes).count == codes.count)
+
+        #expect(stub.requests[1].url?.path == "/api/recovery/codes/regenerate")
+        let body = try json(stub.requests[1])
+        let rotated = try #require(body["rotatedRecovery"] as? [String: Any])
+        // The envelope opens with the key recovery re-derives: the password under the SERVER's KDF.
+        let ak = try authKey("OldPassw0rd!")
+        let envelope = Envelope(ciphertext: try #require(rotated["recoveryEnvelopeCiphertext"] as? String),
+                                nonce: try #require(rotated["recoveryEnvelopeNonce"] as? String))
+        #expect(try EnvelopeHelper.decrypt(key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: ak), envelope: envelope) == vaultKey)
+        // Hashes match the codes shown, under their own salt.
+        let hashes = try #require(rotated["recoveryCodeHashes"] as? [String])
+        let saltB64 = try #require(rotated["recoveryCodeSalt"] as? String)
+        let salt = try #require(Data(base64Encoded: saltB64))
+        #expect(hashes.count == codes.count)
+        #expect(hashes[3] == (try Argon2.hashRecoveryCode(codes[3], salt: salt)).base64EncodedString())
+    }
+
+    @Test func aWrongPasswordSendsNothingBecauseTheServerCouldNotTell() async throws {
+        let (service, stub, _, vaultKey) = try await connectedService([])
+        let result = try await service.regenerateRecoveryCodes(email: "a@b.c", password: "wrong", vaultKey: vaultKey)
+        #expect(result == .incorrectPassword)
+        #expect(stub.requests.isEmpty)
+    }
+
+    @Test func aServerFailureWhileRegeneratingPropagates() async throws {
+        let (service, _, _, vaultKey) = try await connectedService([challengeReply, .init(status: 500)])
+        await #expect(throws: ApiError.http(status: 500, message: "Server error (HTTP 500)")) {
+            _ = try await service.regenerateRecoveryCodes(email: "a@b.c", password: "OldPassw0rd!", vaultKey: vaultKey)
+        }
+    }
+
     // MARK: Registration
 
     @Test func registerBuildsConsistentCryptoMaterial() async throws {

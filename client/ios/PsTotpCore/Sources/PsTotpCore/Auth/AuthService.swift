@@ -12,6 +12,13 @@ public enum ChangePasswordResult: Sendable, Equatable {
     case incorrectCurrentPassword
 }
 
+public enum RegenerateCodesResult: Sendable, Equatable {
+    case codes([String])
+    /// The password doesn't match this vault's. Nothing was sent: the recovery envelope is wrapped
+    /// with a key derived from the password, so a wrong one would make recovery fail later.
+    case incorrectPassword
+}
+
 public struct RegistrationResult: Sendable, Equatable {
     public let vaultKey: Data
     public let recoveryCodes: [String]
@@ -32,6 +39,7 @@ public final class AuthService: Sendable {
     private let secrets: SecretStore
     private let authApi: AuthApi
     private let devicesApi: DevicesApi
+    private let recoveryApi: RecoveryApi
     private let invalidateBiometric: @Sendable () async -> Void
 
     /// - Parameter invalidateBiometric: Removes any enrolled biometric copy of the vault key. Called
@@ -46,6 +54,7 @@ public final class AuthService: Sendable {
         self.secrets = secrets
         self.authApi = AuthApi(client: client)
         self.devicesApi = DevicesApi(client: client)
+        self.recoveryApi = RecoveryApi(client: client)
         self.invalidateBiometric = invalidateBiometric
     }
 
@@ -136,15 +145,8 @@ public final class AuthService: Sendable {
 
         let vaultKey = KeyDerivation.generateVaultKey()
         let salt = KeyDerivation.generateSalt()
-        let recoverySalt = KeyDerivation.generateSalt()
-        let recoveryCodes = RecoveryCodes.generate()
 
-        // Argon2 ×(1 + codes), all off the calling executor.
-        let (authKey, codeHashes) = try await Self.offMainThread {
-            let authKey = try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt)
-            let hashes = try recoveryCodes.map { try Argon2.hashRecoveryCode($0, salt: recoverySalt).base64EncodedString() }
-            return (authKey, hashes)
-        }
+        let authKey = try await Self.offMainThread { try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt) }
         let verifier = KeyDerivation.deriveVerifier(authKey: authKey)
         let passwordEnvelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: authKey), plaintext: vaultKey)
 
@@ -152,10 +154,7 @@ public final class AuthService: Sendable {
         let publicKey = Ecdh.exportPublicKey(ecdhKey.publicKey)
         let deviceEnvelope = try Ecdh.packDeviceEnvelope(vaultKey: vaultKey, recipientPublicKey: ecdhKey.publicKey)
 
-        // The recovery envelope is wrapped with a password-derived key; recovery proves the password
-        // through step-up auth, then decrypts it.
-        let recoveryEnvelope = try EnvelopeHelper.encrypt(
-            key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: authKey), plaintext: vaultKey)
+        let (recovery, recoveryCodes) = try await Self.makeRecovery(authKey: authKey, vaultKey: vaultKey)
 
         let result = try await authApi.register(
             registrationSessionId: registrationSessionId, email: email,
@@ -164,9 +163,7 @@ public final class AuthService: Sendable {
             passwordEnvelope: passwordEnvelope,
             device: .ios(publicKeyBase64: publicKey.base64EncodedString()),
             deviceEnvelope: deviceEnvelope,
-            recovery: RecoveryDto(
-                recoveryEnvelopeCiphertext: recoveryEnvelope.ciphertext, recoveryEnvelopeNonce: recoveryEnvelope.nonce,
-                recoveryCodeHashes: codeHashes, recoveryCodeSalt: recoverySalt.base64EncodedString()))
+            recovery: recovery)
 
         // The device key goes first: without it the device envelope the server now holds is unusable.
         try persistEcdhKey(ecdhKey)
@@ -239,6 +236,47 @@ public final class AuthService: Sendable {
         ])
         try await persistTokens(response.accessToken, response.refreshToken)
         return .success
+    }
+
+    // MARK: Recovery codes
+
+    /// Replaces the account's recovery codes with a fresh set. The old ones stop working. The vault
+    /// key is unchanged.
+    ///
+    /// The password is needed to derive the key that wraps the vault key for recovery; the server can't
+    /// check it, so it is checked here against this vault's own password first.
+    public func regenerateRecoveryCodes(email: String, password: String, vaultKey: Data) async throws -> RegenerateCodesResult {
+        guard try await repository.unlockVault(password: password) != nil else { return .incorrectPassword }
+
+        let ecdhKey = try loadOrGenerateEcdhKey()
+        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
+        let challenge = try await authApi.requestLoginChallenge(email: email, device: device)
+        let kdf = challenge.challenge.kdf
+        guard let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
+
+        // Recovery derives this key from the password with the server's parameters, so does this.
+        let authKey = try await Self.offMainThread {
+            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
+                            iterations: kdf.iterations, parallelism: kdf.parallelism)
+        }
+        let (recovery, codes) = try await Self.makeRecovery(authKey: authKey, vaultKey: vaultKey)
+        try await recoveryApi.regenerateCodes(rotatedRecovery: recovery)
+        return .codes(codes)
+    }
+
+    /// New recovery codes (hashed with their own salt, not the password's) and the recovery envelope:
+    /// the vault key wrapped with a key derived from the password's `authKey`, which recovery
+    /// re-derives after proving the password through step-up auth.
+    private static func makeRecovery(authKey: Data, vaultKey: Data) async throws -> (RecoveryDto, [String]) {
+        let salt = KeyDerivation.generateSalt()
+        let codes = RecoveryCodes.generate()
+        let hashes = try await offMainThread {
+            try codes.map { try Argon2.hashRecoveryCode($0, salt: salt).base64EncodedString() }
+        }
+        let envelope = try EnvelopeHelper.encrypt(
+            key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: authKey), plaintext: vaultKey)
+        return (RecoveryDto(recoveryEnvelopeCiphertext: envelope.ciphertext, recoveryEnvelopeNonce: envelope.nonce,
+                            recoveryCodeHashes: hashes, recoveryCodeSalt: salt.base64EncodedString()), codes)
     }
 
     // MARK: Logout

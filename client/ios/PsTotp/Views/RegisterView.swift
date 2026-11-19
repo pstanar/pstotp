@@ -112,25 +112,11 @@ struct RegisterView: View {
             Text("Store these codes in a safe place. They are the only way to recover your account if you lose all your devices.")
                 .font(.footnote)
                 .foregroundStyle(Palette.onSurfaceVariant)
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(recoveryCodes.enumerated()), id: \.offset) { index, code in
-                    Text("\(index + 1). \(code)")
-                        .font(.body.monospaced())
-                        .textSelection(.enabled)
-                }
+            RecoveryCodesPanel(codes: recoveryCodes) {
+                model.showToast("Codes copied — clears in \(Int(Clipboard.clearAfter))s")
             }
-            .padding(.vertical, 8)
             .accessibilityIdentifier("register.codes")
 
-            HStack {
-                Button("Copy") {
-                    Clipboard.copy(recoveryCodes.joined(separator: "\n"))
-                    model.showToast("Codes copied — clears in \(Int(Clipboard.clearAfter))s")
-                }
-                .buttonStyle(.bordered)
-                ShareLink(item: recoveryCodes.joined(separator: "\n"), subject: Text("PsTotp recovery codes"))
-                    .buttonStyle(.bordered)
-            }
             AuthSubmitButton(title: "I've Saved My Codes", busyTitle: "", loading: false, action: onFinished)
                 .accessibilityIdentifier("register.saved")
         }

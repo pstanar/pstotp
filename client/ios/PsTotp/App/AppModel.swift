@@ -430,6 +430,25 @@ final class AppModel {
         }
     }
 
+    // MARK: Recovery codes
+
+    /// Replace the account's recovery codes (the old ones stop working).
+    /// - Returns: the new codes, or a message for the user.
+    func regenerateRecoveryCodes(password: String) async -> Result<[String], ConnectionFailure> {
+        guard case .connected(_, let email) = connection, !email.isEmpty else {
+            return .failure(.init(message: "Not connected"))
+        }
+        guard let key = vaultKey else { return .failure(.init(message: "Vault is locked")) }
+        do {
+            switch try await auth.regenerateRecoveryCodes(email: email, password: password, vaultKey: key) {
+            case .codes(let codes): return .success(codes)
+            case .incorrectPassword: return .failure(.init(message: "Incorrect password"))
+            }
+        } catch {
+            return .failure(.init(message: deviceFailure(error)))
+        }
+    }
+
     // MARK: Audit log
 
     /// The account's latest security events, newest first (the server orders them).

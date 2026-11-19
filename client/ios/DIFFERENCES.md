@@ -68,8 +68,9 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 43 | Local password envelope when the account's KDF isn't the default | Derived with the server's parameters, so offline unlock (which uses the pinned 64 MB / t=3 / p=4) can fail. | A second key is derived with the pinned parameters for the local envelope. | Avoids locking the user out of their own vault. | internal | |
 | 44 | A device that has never synced My icons meets an account that has a library | The device's copy replaces the account's (last write wins), so icons from other devices are lost. | The two are merged: the account's icons plus ours that match neither by id nor by content hash, within the caps; the result is pushed. Later changes are last-write-wins as on Android. | Connecting must not delete icons on either side. Decided with the user. | internal | |
 | 45 | Devices screen | A single list; approve / reject on pending devices only, no revoke, no marker for the current device. | Grouped like the web client (Pending, Approved, Revoked); approved devices other than this one can be revoked (swipe, with a confirmation); this device is labelled "This device" and can't be revoked from here. | Revoking is how a lost device is cut off; revoking the device in use would just sign the user out. Confirmed by the user. | internal | |
+| 46 | Regenerating recovery codes with a wrong password | New codes are generated and sent; their recovery envelope can never be opened. | The password is checked against the vault's own first ("Incorrect password"); nothing is sent on a mismatch. (Web verifies through a throwaway login instead; iOS avoids the extra session and login event.) | Otherwise a typo silently breaks recovery. | internal | |
 
 ## Not ported yet (pending, not differences)
 
-Password sign-in, registration, vault sync, the icon library's sync, Change Password, Devices and the Audit Log are done. Still to do: passkey
-login, account recovery, and the connected-only Passkeys and Recovery Codes buttons in Settings.
+Password sign-in, registration, vault sync, the icon library's sync, Change Password, Devices, the Audit Log and Recovery Codes are done. Still to do: passkey
+login, account recovery, and the connected-only Passkeys button in Settings.

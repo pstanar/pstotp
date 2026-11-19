@@ -110,6 +110,15 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   with a confirmation on approved devices other than this one, and a "This device" label from the stored
   device id.)
 
+- [ ] **Regenerating recovery codes never checks the password (Suspected, likely)** — `AuthService.regenerateRecoveryCodes`
+  derives `authKey` from whatever password was typed and wraps the vault key under
+  `deriveRecoveryUnlockKey(authKey)`; nothing compares it with the local verifier, and the request carries no
+  proof. A typo gives new codes whose recovery envelope can never be opened (recovery derives the key from the real
+  password), so the user believes they have working codes. Fix: verify the password first
+  (`repository.unlockVault(password) != null`), or complete a step-up proof like the web client does. The web client
+  is not affected: `recovery-management.tsx` does a throwaway login (`completeLogin`) first, which the server
+  verifies. (iOS: checks against the vault's own verifier first.)
+
 ### Web client
 
 - [ ] **`parseOtpauthUri` accepts `NaN` digits/period (Verified)** — `totp.ts` uses `parseInt` and then
@@ -140,7 +149,16 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
 
 ### Server
 
-- _None found yet — the server code hasn't been read closely. Add findings here._
+- [ ] **Design question: regenerating recovery codes needs no proof of the password** — `RegenerateCodes`
+  (`RecoveryManagementEndpoints.cs`) accepts any request from an approved device's token. Password change
+  (`AccountEndpoints.cs`) requires a step-up `VerifierProof`; this endpoint doesn't, so the password check is
+  voluntary client behaviour (web does a throwaway `completeLogin`, which also issues unused tokens and logs a
+  login event; Android skips the check, iOS checks locally). Someone holding a stolen access token can
+  retire the user's real recovery codes and install an envelope nobody can open, silently breaking recovery (not a
+  takeover: recovery itself needs the password proof). Suggested: take a `VerifierProof` in
+  `RecoveryCodeRegenerateRequest` and verify it as password change does; the proof and the envelope key come from
+  the same derived key, so a typo then becomes impossible, and the web workaround can go. Hardening, not a defect
+  in existing behaviour.
 
 ## Done
 

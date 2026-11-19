@@ -499,4 +499,35 @@ struct AppModelConnectionTests {
         _ = await model.loadAuditEvents()
         if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
     }
+
+    // MARK: Recovery codes
+
+    @Test func regeneratingRecoveryCodesReturnsEightNewOnes() async throws {
+        let challenge = try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey())[0]
+        let (model, transport) = try await connectedModel(extra: [challenge, .init()])
+        guard case .success(let codes) = await model.regenerateRecoveryCodes(password: "pw") else { Issue.record("failed"); return }
+        #expect(codes.count == RecoveryCodes.count)
+        #expect(transport.authPaths.last == "/api/recovery/codes/regenerate")
+    }
+
+    @Test func aWrongPasswordIsRefusedBeforeAnythingIsSent() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        let before = transport.paths.count
+        guard case .failure(let failure) = await model.regenerateRecoveryCodes(password: "nope") else { Issue.record("expected a failure"); return }
+        #expect(failure.message == "Incorrect password")
+        #expect(transport.paths.count == before)
+    }
+
+    @Test func regeneratingNeedsAConnection() async {
+        let (model, _) = await unlockedModel([])
+        guard case .failure(let failure) = await model.regenerateRecoveryCodes(password: "pw") else { Issue.record("expected a failure"); return }
+        #expect(failure.message == "Not connected")
+    }
+
+    @Test func anExpiredSessionWhileRegeneratingAsksToSignInAgain() async throws {
+        let challenge = try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey())[0]
+        let (model, _) = try await connectedModel(extra: [challenge, .init(status: 401), .init(status: 401)])
+        _ = await model.regenerateRecoveryCodes(password: "pw")
+        if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
+    }
 }
