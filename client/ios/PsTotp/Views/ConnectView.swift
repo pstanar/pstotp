@@ -7,8 +7,8 @@ struct ConnectView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var serverUrl = ""
-    @State private var email = ""
+    @State private var serverUrl: String
+    @State private var email: String
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
@@ -17,6 +17,13 @@ struct ConnectView: View {
     @FocusState private var focus: Field?
 
     private enum Field { case server, email, password }
+
+    /// - Parameters: Pre-filled when signing in again to a known account.
+    init(model: AppModel, serverUrl: String = "", email: String = "") {
+        self.model = model
+        _serverUrl = State(initialValue: serverUrl)
+        _email = State(initialValue: email)
+    }
 
     var body: some View {
         ScrollView {

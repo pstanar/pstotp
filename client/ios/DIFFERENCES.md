@@ -61,9 +61,13 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 36 | Server address field | The full API URL is typed (`https://host/api`); anything is accepted. | `ServerURL.normalize`: scheme defaults to https, a bare host gets `/api`, anything else must be an http(s) address. | Friendlier input; a bad address is caught before any request. | cosmetic | |
 | 37 | Device ECDH key storage | Public and private key stored separately in `SecureStore`. | One Keychain item (private key, PKCS#8); the public key is derived. | Nothing to keep consistent. | internal | |
 | 38 | Registration: when the device key is saved | After tokens and session. | Before them. | A failure part-way can't leave a connected session whose device envelope can't be opened. | internal | |
+| 39 | A deletion that can't reach the server | The local tombstone is removed whatever the error, so the entry comes back at the next pull. | Removed only when the server confirms (or has never heard of it); any other failure keeps it and is retried. | Android loses deletions made offline. | internal | |
+| 40 | An edit made while its push is in flight | The pending flag is cleared when the push returns, so the newer edit is never sent. | Cleared only if the entry is unchanged since it was read. | Android can lose the edit. | internal | |
+| 41 | Reordering on another device | Applied only when the entry's version also changed, so a pure reorder never reaches other devices. | A pulled sort order is applied to entries with no unsent change, version or not. | The server's reorder doesn't bump versions. | internal | |
+| 42 | After the session expires | The app shows the Connect button with no explanation. | Settings says the session expired and offers "Sign in again" with the server and email filled in. | Clearer. | cosmetic | |
 
 ## Not ported yet (pending, not differences)
 
-the icon library's server sync, connected mode: sync, passkey login, devices,
+the icon library's server sync, connected mode: the icon library's sync, passkey login, devices,
 audit, account recovery (password sign-in and registration are done; the connected-only Change Password, Devices, Audit Log, Passkeys,
 Recovery Codes buttons).

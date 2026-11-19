@@ -39,7 +39,19 @@ final class AppModel {
     enum Connection: Equatable {
         case standalone
         case connected(serverUrl: String, email: String)
+        /// Linked to an account whose session the server no longer accepts: sign in again to resume.
+        case expired(serverUrl: String, email: String)
     }
+
+    enum SyncState: Equatable {
+        case idle
+        case syncing
+        case failed(String)
+    }
+
+    private(set) var syncState: SyncState = .idle
+    /// The server's clock at the last completed sync (ISO 8601), as stored.
+    private(set) var lastSyncAt: String?
 
     private(set) var connection: Connection = .standalone
 
@@ -47,6 +59,9 @@ final class AppModel {
     private let iconLibrary: IconLibraryRepository
     private let biometrics: BiometricKeyStore
     private let auth: AuthService
+    private let sync: SyncService?
+    private var syncAgain = false
+    private var syncTask: Task<Void, Never>?
     private var vaultKey: Data?
     private var usage: [String: EntryUsageRecord] = [:]
     /// Usage as of the last (re)sort. Copying a code records usage but must not re-sort the list
@@ -64,23 +79,36 @@ final class AppModel {
     init(
         repository: VaultRepository, iconLibrary: IconLibraryRepository,
         biometrics: BiometricKeyStore = KeychainBiometricKeyStore(),
-        auth: AuthService? = nil
+        server: ServerSession? = nil
     ) {
         self.repository = repository
         self.iconLibrary = iconLibrary
         self.biometrics = biometrics
-        self.auth = auth ?? Self.makeAuth(repository: repository, biometrics: biometrics,
-                                          secrets: InMemorySecretStore(), transport: URLSessionTransport())
+        let server = server ?? Self.makeServerSession(
+            db: nil, repository: repository, biometrics: biometrics, secrets: InMemorySecretStore(), transport: URLSessionTransport())
+        self.auth = server.auth
+        self.sync = server.sync
     }
 
-    /// Wires `AuthService` so that replacing the vault key also removes the biometric copy of the old one.
-    static func makeAuth(
-        repository: VaultRepository, biometrics: BiometricKeyStore, secrets: SecretStore, transport: HTTPTransport
-    ) -> AuthService {
-        AuthService(repository: repository, client: ApiClient(baseURL: "", transport: transport), secrets: secrets) {
+    /// Authentication and sync, sharing one API client (so they share one set of tokens).
+    struct ServerSession {
+        let auth: AuthService
+        let sync: SyncService?
+    }
+
+    /// - Parameter db: Needed for sync; nil builds a session without it (tests of other features).
+    ///
+    /// Replacing the vault key (connecting) also removes the biometric copy of the old one.
+    static func makeServerSession(
+        db: AppDatabase?, repository: VaultRepository, biometrics: BiometricKeyStore, secrets: SecretStore,
+        transport: HTTPTransport
+    ) -> ServerSession {
+        let client = ApiClient(baseURL: "", transport: transport)
+        let auth = AuthService(repository: repository, client: client, secrets: secrets) {
             biometrics.removeKey()
             try? await repository.setSetting(SettingsKeys.biometricEnabled, "false")
         }
+        return ServerSession(auth: auth, sync: db.map { SyncService(db: $0, client: client, repository: repository) })
     }
 
     // MARK: Startup
@@ -183,6 +211,7 @@ final class AppModel {
             sortUsage = usage
             errorMessage = nil
             phase = .unlocked
+            requestSync()
             return true
         } catch let mismatch as VaultKeyMismatchError {
             errorMessage = "Vault key mismatch: \(mismatch.failed) of \(mismatch.total) entries could not be decrypted."
@@ -224,6 +253,7 @@ final class AppModel {
         try? await auth.restoreSession()
         if try await auth.isConnected(), let url = try await auth.serverUrl() {
             connection = .connected(serverUrl: url, email: try await repository.getSetting(SettingsKeys.email) ?? "")
+            lastSyncAt = try await repository.getSetting(SettingsKeys.lastSyncAt)
         } else {
             connection = .standalone
         }
@@ -240,6 +270,7 @@ final class AppModel {
             case .approved(let serverKey):
                 guard await adoptKey(serverKey) else { return .failed(errorMessage ?? "Connection failed") }
                 connection = .connected(serverUrl: url, email: email)
+                requestSync()
                 return .connected
             case .pendingApproval:
                 return .pendingApproval
@@ -287,6 +318,7 @@ final class AppModel {
                                                  registrationSessionId: sessionId, localVaultKey: key)
             guard await adoptKey(result.vaultKey) else { return .failure(.init(message: errorMessage ?? "Registration failed")) }
             connection = .connected(serverUrl: url, email: email)
+            requestSync()
             return .success(result.recoveryCodes)
         } catch {
             return .failure(.init(message: Self.connectionMessage(error)))
@@ -298,6 +330,58 @@ final class AppModel {
     func disconnect() async {
         try? await auth.logout()
         connection = .standalone
+        syncState = .idle
+        lastSyncAt = nil
+    }
+
+    // MARK: Sync
+
+    /// Sync in the background, e.g. after a change. Does nothing when not connected.
+    func requestSync() {
+        guard case .connected = connection, sync != nil else { return }
+        if syncState == .syncing {
+            syncAgain = true   // pick up what changed while a sync was already running
+            return
+        }
+        syncTask = Task { await syncNow() }
+    }
+
+    /// Waits for a sync started by `requestSync()` (tests).
+    func waitForPendingSync() async { await syncTask?.value }
+
+    /// Push local changes, pull the server's, and refresh the list.
+    func syncNow() async {
+        guard case .connected(let url, let email) = connection, let sync, syncState != .syncing else { return }
+        syncState = .syncing
+        repeat {
+            syncAgain = false
+            switch await sync.fullSync() {
+            case .success(let pulled, _):
+                syncState = .idle
+                lastSyncAt = try? await repository.getSetting(SettingsKeys.lastSyncAt)
+                if pulled > 0 { await reloadEntries() }
+            case .error(let message):
+                syncState = .failed(message)
+            case .sessionExpired:
+                syncState = .idle
+                connection = .expired(serverUrl: url, email: email)
+                syncAgain = false
+            case .notConnected:
+                syncState = .idle
+            }
+        } while syncAgain
+    }
+
+    /// Re-read the entries after a pull. A decrypt failure here means the server holds entries
+    /// encrypted with another key — shown, not hidden.
+    private func reloadEntries() async {
+        guard let key = vaultKey else { return }   // locked: the next unlock reads them
+        do {
+            entries = try await repository.getAllEntries(vaultKey: key)
+            sortUsage = usage
+        } catch {
+            syncState = .failed("Synced entries can't be read: \(error.localizedDescription)")
+        }
     }
 
     /// Switch the in-memory state to the account's vault key. Decrypts first, so a failure leaves the
@@ -340,6 +424,7 @@ final class AppModel {
             let entry = try await repository.addEntry(vaultKey: key, plaintext: valid)
             entries.append(entry)
             sortUsage = usage
+            requestSync()
             return nil
         } catch let error as EntryValidationError {
             return error.description
@@ -358,6 +443,7 @@ final class AppModel {
         do {
             try await repository.updateEntry(vaultKey: key, entry: edited)
             if let index = entries.firstIndex(where: { $0.id == entry.id }) { entries[index] = edited }
+            requestSync()
             return nil
         } catch {
             return "Failed to update entry: \(error.localizedDescription)"
@@ -382,6 +468,7 @@ final class AppModel {
         enqueue { [self] in
             do {
                 try await repository.reorderEntries(orderedIds: order)
+                requestSync()
             } catch {
                 // The database didn't take the new order: show what is actually stored.
                 if let key = vaultKey, let reloaded = try? await repository.getAllEntries(vaultKey: key) {
@@ -397,6 +484,7 @@ final class AppModel {
             entries.removeAll { $0.id == id }
             usage[id] = nil
             sortUsage[id] = nil
+            requestSync()
         } catch {
             showToast("Failed to delete: \(error.localizedDescription)")
         }
@@ -558,6 +646,7 @@ final class AppModel {
             try await repository.importEntries(vaultKey: key, plan: plan)
             entries = try await repository.getAllEntries(vaultKey: key)
             sortUsage = usage
+            requestSync()
             let icons = await addImportedIconsToLibrary(candidates, key: key)
             showToast(ImportIcons.importMessage(entries: plan.count, icons: icons))   // Android's wording
             return nil
@@ -728,7 +817,8 @@ extension AppModel {
         // UI tests must never touch the real Keychain or network.
         let inMemory = arguments.contains("-uitest-inmemory")
         let secrets: SecretStore = inMemory ? InMemorySecretStore() : KeychainSecretStore()
-        let auth = makeAuth(repository: repository, biometrics: biometrics, secrets: secrets, transport: URLSessionTransport())
-        return AppModel(repository: repository, iconLibrary: IconLibraryRepository(db: db), biometrics: biometrics, auth: auth)
+        let server = makeServerSession(db: db, repository: repository, biometrics: biometrics, secrets: secrets,
+                                       transport: URLSessionTransport())
+        return AppModel(repository: repository, iconLibrary: IconLibraryRepository(db: db), biometrics: biometrics, server: server)
     }
 }

@@ -86,15 +86,23 @@ struct SettingsView: View {
                     LabeledContent("Server", value: ServerURL.displayHost(serverUrl))
                         .accessibilityIdentifier("settings.server")
                     if !email.isEmpty { LabeledContent("Account", value: email) }
+                    syncRows
+                    Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
+                        .accessibilityIdentifier("settings.disconnect")
+                case .expired(let serverUrl, let email):
+                    LabeledContent("Server", value: ServerURL.displayHost(serverUrl))
+                    if !email.isEmpty { LabeledContent("Account", value: email) }
+                    Text("Session expired — sign in again to resume syncing.")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.error)
+                        .accessibilityIdentifier("settings.expired")
+                    NavigationLink("Sign in again") { ConnectView(model: model, serverUrl: serverUrl, email: email) }
+                        .accessibilityIdentifier("settings.reconnect")
                     Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
                         .accessibilityIdentifier("settings.disconnect")
                 }
             } header: {
                 Text("Server Sync")
-            } footer: {
-                if case .connected = model.connection {
-                    Text("Accounts sync to the server in an upcoming update.")
-                }
             }
             .listRowBackground(Palette.surface)
 
@@ -148,6 +156,38 @@ struct SettingsView: View {
         } message: {
             Text(importError ?? "")
         }
+    }
+
+    @ViewBuilder private var syncRows: some View {
+        if let last = model.lastSyncAt {
+            LabeledContent("Last sync", value: Self.syncTime(last))
+                .accessibilityIdentifier("settings.lastSync")
+        }
+        if case .failed(let message) = model.syncState {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(Palette.error)
+                .accessibilityIdentifier("settings.syncError")
+        }
+        Button {
+            Task { await model.syncNow() }
+        } label: {
+            HStack(spacing: 8) {
+                if model.syncState == .syncing { ProgressView() }
+                Text(model.syncState == .syncing ? "Syncing…" : "Sync Now")
+            }
+        }
+        .disabled(model.syncState == .syncing)
+        .accessibilityIdentifier("settings.syncNow")
+    }
+
+    /// The server's ISO 8601 time in the user's locale; the raw text if it can't be read.
+    static func syncTime(_ iso: String) -> String {
+        let plain = ISO8601DateFormatter()
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else { return iso }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     private func setBiometrics(_ enabled: Bool) {

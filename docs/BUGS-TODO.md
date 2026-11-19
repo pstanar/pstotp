@@ -67,6 +67,15 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   ("no re-encryption is needed"). Fix: re-encrypt entries + icon library from the old key to the new one in one
   transaction when adopting the key. (iOS: `VaultRepository.replaceVaultKey`.) Confirm by registering on a device
   that already holds two or more accounts.
+- [ ] **Offline deletions come back (Suspected, likely)** — `SyncService.pushEntry` hard-deletes the local tombstone
+  in a `catch (_: Exception)` that also swallows network errors, so a deletion made offline never reaches the server
+  and the entry reappears at the next pull. Fix: hard-delete only on success or a 404. (iOS does.)
+- [ ] **A reorder on one device never reaches the others (Suspected)** — the server's `/vault/reorder` changes
+  `SortOrder` but not `EntryVersion`, and `pullVault` applies a server entry's sort order only when its version is
+  newer. Fix: also apply the sort order for entries with no pending local change. (iOS does.)
+- [ ] **An edit made during a push is marked synced (Suspected)** — `pushEntry` calls `markSynced` (clears
+  `pendingSync`) after the request returns, even if the entry changed meanwhile; the newer edit is never pushed.
+  Fix: clear the flag only if the payload is unchanged. (iOS does.)
 
 ### Web client
 

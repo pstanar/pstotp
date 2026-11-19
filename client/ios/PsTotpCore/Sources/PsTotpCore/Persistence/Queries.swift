@@ -46,6 +46,27 @@ enum VaultEntryQueries {
     static func markPendingSync(_ db: Database, id: String) throws {
         try db.execute(sql: "UPDATE vault_entries SET pendingSync = 1 WHERE id = ?", arguments: [id])
     }
+
+    // MARK: Sync
+
+    /// Every row, soft-deleted ones included.
+    static func allIncludingDeleted(_ db: Database) throws -> [VaultEntryRecord] {
+        try VaultEntryRecord.fetchAll(db)
+    }
+
+    /// Rows with local changes the server hasn't seen (edits, additions, deletions).
+    static func pendingSync(_ db: Database) throws -> [VaultEntryRecord] {
+        try VaultEntryRecord.filter(Column("pendingSync") == true).order(Column("sortOrder").asc).fetchAll(db)
+    }
+
+    static func hardDelete(_ db: Database, id: String) throws {
+        try db.execute(sql: "DELETE FROM vault_entries WHERE id = ?", arguments: [id])
+    }
+
+    /// Ids of live entries in display order.
+    static func liveIdsInOrder(_ db: Database) throws -> [String] {
+        try String.fetchAll(db, sql: "SELECT id FROM vault_entries WHERE deletedAt IS NULL ORDER BY sortOrder ASC")
+    }
 }
 
 enum SettingsQueries {

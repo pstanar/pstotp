@@ -9,12 +9,28 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [Reply]
     private(set) var paths: [String] = []
+    /// Status for the vault endpoints, which are answered automatically (an empty, accepting vault)
+    /// and don't use up scripted replies.
+    var vaultStatus = 200
 
     init(_ replies: [Reply]) { self.replies = replies }
 
+    /// Everything the test script isn't about: the requests a sync makes.
+    var vaultPaths: [String] { lock.withLock { paths.filter { $0.hasPrefix("/api/vault") } } }
+    var authPaths: [String] { lock.withLock { paths.filter { !$0.hasPrefix("/api/vault") } } }
+
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let path = request.url?.path ?? ""
         let reply = lock.withLock { () -> Reply in
-            paths.append(request.url?.path ?? "")
+            paths.append(path)
+            if path.hasPrefix("/api/vault") {
+                if vaultStatus != 200 { return Reply(status: vaultStatus) }
+                switch request.httpMethod {
+                case "GET": return Reply(body: #"{"entries":[],"serverTime":"2026-11-19T12:00:00Z"}"#)
+                case "PUT": return Reply(body: #"{"id":"x","entryVersion":1,"updatedAt":"2026-11-19T10:00:00Z"}"#)
+                default: return Reply()
+                }
+            }
             return replies.isEmpty ? Reply(status: 500) : replies.removeFirst()
         }
         let http = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: nil,
@@ -38,8 +54,8 @@ struct AppModelConnectionTests {
     private func model(_ replies: [ScriptedTransport.Reply]) -> (AppModel, ScriptedTransport) {
         let transport = ScriptedTransport(replies)
         let repository = VaultRepository(db: db)
-        let auth = AppModel.makeAuth(repository: repository, biometrics: biometrics, secrets: secrets, transport: transport)
-        return (AppModel(repository: repository, iconLibrary: IconLibraryRepository(db: db), biometrics: biometrics, auth: auth), transport)
+        let server = AppModel.makeServerSession(db: db, repository: repository, biometrics: biometrics, secrets: secrets, transport: transport)
+        return (AppModel(repository: repository, iconLibrary: IconLibraryRepository(db: db), biometrics: biometrics, server: server), transport)
     }
 
     /// An unlocked vault with two accounts.
@@ -142,7 +158,7 @@ struct AppModelConnectionTests {
         let relaunch = await restarted()
         #expect(await relaunch.unlock(password: "longenough"))
         #expect(relaunch.entries.map(\.issuer).sorted() == ["AWS", "GitHub", "New"])
-        #expect(transport.paths == ["/api/auth/register/begin", "/api/auth/register/verify-email", "/api/auth/register"])
+        #expect(transport.authPaths == ["/api/auth/register/begin", "/api/auth/register/verify-email", "/api/auth/register"])
     }
 
     @Test func registerRejectsAShortPasswordWithoutContactingTheServer() async {
@@ -174,5 +190,68 @@ struct AppModelConnectionTests {
         await model.start()
         #expect(model.phase == .needsSetup)
         for key in SecretKey.allCases { #expect(try secrets.get(key) == nil) }
+    }
+
+    // MARK: Sync
+
+    @Test func connectingPushesTheLocalAccountsAndRecordsTheSyncTime() async throws {
+        let (model, transport) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()))
+        #expect(await model.connect(serverUrl: "x.test", email: "a@b.c", password: "pw") == .connected)
+        await model.waitForPendingSync()
+        #expect(transport.vaultPaths.filter { $0.hasPrefix("/api/vault/") && $0 != "/api/vault/reorder" }.count == 2)   // two PUTs
+        #expect(transport.vaultPaths.contains("/api/vault/reorder") && transport.vaultPaths.contains("/api/vault"))
+        #expect(model.lastSyncAt == "2026-11-19T12:00:00Z")
+        #expect(model.syncState == .idle)
+    }
+
+    @Test func editsAreSyncedAsTheyHappen() async throws {
+        let (model, transport) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()))
+        _ = await model.connect(serverUrl: "x.test", email: "a@b.c", password: "pw")
+        await model.waitForPendingSync()
+        let before = transport.vaultPaths.count
+
+        #expect(await model.addEntry(VaultEntryPlaintext(issuer: "New", accountName: "x", secret: "JBSWY3DPEHPK3PXP")) == nil)
+        await model.waitForPendingSync()
+        #expect(transport.vaultPaths.count > before)
+        #expect(transport.vaultPaths.last == "/api/vault")   // push, order, then pull
+    }
+
+    @Test func standaloneNeverTouchesTheNetwork() async {
+        let (model, transport) = await unlockedModel([])
+        _ = await model.addEntry(VaultEntryPlaintext(issuer: "New", accountName: "x", secret: "JBSWY3DPEHPK3PXP"))
+        await model.syncNow()
+        #expect(transport.paths.isEmpty)
+        #expect(model.syncState == .idle)
+    }
+
+    @Test func aFailedSyncIsShownAndRetriedByTheNextOne() async throws {
+        let (model, transport) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()))
+        transport.vaultStatus = 500
+        _ = await model.connect(serverUrl: "x.test", email: "a@b.c", password: "pw")
+        await model.waitForPendingSync()
+        #expect(model.syncState == .failed("Server error (HTTP 500)"))
+        #expect(model.connection != .standalone)
+
+        transport.vaultStatus = 200
+        await model.syncNow()
+        #expect(model.syncState == .idle)
+    }
+
+    @Test func anExpiredSessionAsksForANewSignIn() async throws {
+        let (model, transport) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()) + [.init(status: 401)])
+        transport.vaultStatus = 401
+        _ = await model.connect(serverUrl: "x.test", email: " a@b.c", password: "pw")
+        await model.waitForPendingSync()
+        #expect(model.connection == .expired(serverUrl: "https://x.test/api", email: "a@b.c"))
+        #expect(model.syncState == .idle)
+        #expect(model.entries.count == 2)   // nothing lost
+    }
+
+    @Test func disconnectingForgetsTheSyncTime() async throws {
+        let (model, _) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()) + [.init()])
+        _ = await model.connect(serverUrl: "x.test", email: "a@b.c", password: "pw")
+        await model.waitForPendingSync()
+        await model.disconnect()
+        #expect(model.lastSyncAt == nil && model.syncState == .idle)
     }
 }
