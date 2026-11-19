@@ -9,12 +9,14 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
 unless its entry says "Verified", so reproduce before fixing):
 
 1. *Data loss or lockout:* connecting a device that already has local accounts (wrong key, entries unreadable);
-   offline deletions that come back; an edit made during a push marked synced; first connect overwriting the
-   account's icon library; offline unlock with a non-default KDF.
+   edits made while disconnected never syncing (and later overwritten); offline deletions that come back; an
+   edit made during a push marked synced; first connect overwriting the account's icon library; offline unlock
+   with a non-default KDF.
 2. *Recovery that silently doesn't work:* regenerating codes without checking the password; account recovery
    losing its session during the 24 h hold; a stale biometric key after recovery.
 3. *Crashes on bad input:* an invalid secret or `period: 0` crashing the card list.
-4. *Everything else:* non-atomic writes, scanner behaviour, reorder propagation, UX gaps and test gaps.
+4. *Everything else:* a server 5xx during token refresh forcing a sign-in, non-atomic writes, scanner
+   behaviour, reorder propagation, UX gaps and test gaps.
 5. *Web and server:* no floor on server-supplied KDF parameters (web); recovery-code regeneration needs no proof
    of the password, and the missing `apple-app-site-association` endpoint (server).
 
@@ -146,6 +148,21 @@ unless its entry says "Verified", so reproduce before fixing):
   fail to decrypt (same class as the connect/login case above). Fix: clear biometric unless the recovered key equals
   the current local key. The local entries are not re-encrypted either (see the connect entry). (iOS: through
   `adopt`, which does both.)
+
+- [ ] **Edits made while disconnected never sync (Suspected, likely)** — `VaultRepository` sets `pendingSync` and the
+  pending-reorder flag only when `isConnected()` at write time (`addEntry` line 98/109, `updateEntry` 128/145,
+  `deleteEntry` 151, `reorderEntries` 171). Settings → Disconnect, then add / edit / delete / reorder, then
+  connect again to the same account: the vault key is the same, so nothing re-marks the rows, and the changes
+  stay local. A later edit of the same account on another device bumps its version, and the next pull
+  overwrites the local edit. Fix: set the flags on every write (they mean "the server hasn't seen this"), so
+  reconnecting pushes them. (iOS: `VaultRepository`; test `changesMadeWhileDisconnectedAreSentWhenTheDeviceReconnects`.)
+- [ ] **A 5xx or 429 while refreshing the token ends the session (Suspected, likely)** — `ApiClient.refreshTokens`
+  rethrows only `NetworkException`; any other failure, including a 502/503 from a reverse proxy or a 429, goes
+  to `catch (_: Exception) { clearTokens(); throw SessionExpiredException() }` (lines 113-118). A passing server
+  hiccup therefore shows "session expired" and forces a sign-in. Fix: expire the session only when the server
+  refuses the token (400 / 401 / 403) and treat everything else like an unreachable server. Related: the stored
+  tokens are written with no error handling after a refresh, so a failed write leaves a revoked refresh token for
+  the next launch. (iOS: `ApiClient.performRefresh`.)
 
 ### Web client
 

@@ -3,7 +3,7 @@
 Places where the iOS client deliberately does something different from the Android (and, where relevant,
 web) client. Add a row whenever a new difference is introduced.
 
-**Status of the decisions:** all 48 rows were reviewed and decided on 2026-11-19. "Keep" means iOS stays as it
+**Status of the decisions:** all 50 rows were reviewed and decided on 2026-11-19. "Keep" means iOS stays as it
 is. "Keep; Android could adopt" means the iOS behaviour is nicer and cheap to copy. "Keep; fix Android" points
 at the matching entry in [`../../docs/BUGS-TODO.md`](../../docs/BUGS-TODO.md): the iOS behaviour is the right
 one and the other client should be changed to match. Row 12 stays open until the app has been tried on a
@@ -64,6 +64,8 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 46 | Regenerating recovery codes with a wrong password | New codes are generated and sent; their recovery envelope can never be opened. | The password is checked against the vault's own first ("Incorrect password"); nothing is sent on a mismatch. (Web verifies through a throwaway login instead; iOS avoids the extra session and login event.) | Otherwise a typo silently breaks recovery. | internal |  Keep; fix Android (BUGS-TODO: regenerate never checks the password); server hardening logged |
 | 47 | Account recovery across the hold period | The in-progress recovery lives only in the screen; leaving it loses the session. | The pending session (id, server, email, release time) is saved; Connect shows "Resume account recovery"; the password is asked again at the end; "Forget this recovery" drops it locally. | The default hold is 24 h and a second redeem is refused while a session is active. | internal |  Keep; fix Android (BUGS-TODO: recovery can't survive its hold period) |
 | 48 | Finishing recovery on a device that already has a local vault | The recovered key replaces the local one with the biometric copy left in place and local entries not re-encrypted. | Local entries and My icons are re-encrypted with the account's key and the biometric copy is removed (same `adopt` as login). | Avoids unreadable entries / wrong biometric key. | internal |  Keep; fix Android (BUGS-TODO: stale biometric key after recovery) |
+| 49 | Changes made while not connected | `pendingSync` and the pending-reorder flag are set only while connected, so edits made after Disconnect are never pushed when the same account is reconnected (and a newer remote edit overwrites them). | Every local write is marked unsynced whatever the mode; connecting pushes them. | The flag means "the server hasn't seen this". | internal | Keep; fix Android (BUGS-TODO: edits made while disconnected never sync) |
+| 50 | A server error while refreshing the token | Any non-network failure, including 5xx and 429, clears the tokens and reports an expired session. | Only a refusal (400 / 401 / 403) ends the session; 5xx, 429 and network errors keep the tokens and surface as errors. Tokens that can't be stored after a refresh are dropped rather than left revoked. | A transient server or proxy error shouldn't force a sign-in. | behaviour | Keep; fix Android (BUGS-TODO: 5xx during refresh ends the session) |
 
 ## Same result, but written explicitly (not differences)
 
