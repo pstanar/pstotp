@@ -99,7 +99,7 @@ struct ConnectView: View {
     }
 
     private var canSubmit: Bool {
-        !busy && ServerURL.normalize(serverUrl) != nil && !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty
+        !busy && ServerURL.normalize(serverUrl) != nil && !email.isBlank && !password.isEmpty
     }
 
     private func submit() {

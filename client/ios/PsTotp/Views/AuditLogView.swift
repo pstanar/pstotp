@@ -6,25 +6,23 @@ import SwiftUI
 struct AuditLogView: View {
     @Bindable var model: AppModel
 
-    @State private var events: [AuditEventDto] = []
-    @State private var loading = true
-    @State private var error: String?
+    @State private var loaded = Loadable<[AuditEventDto]>()
 
     var body: some View {
         List {
-            if let error {
+            if let error = loaded.error {
                 Section { AuthError(message: error).accessibilityIdentifier("audit.error") }
                     .listRowBackground(Color.clear)
-            } else if loading {
+            } else if loaded.isLoading {
                 Section { HStack { Spacer(); ProgressView(); Spacer() } }
                     .listRowBackground(Color.clear)
-            } else if events.isEmpty {
+            } else if (loaded.value ?? []).isEmpty {
                 Section { Text("No audit events").foregroundStyle(Palette.onSurfaceVariant) }
                     .listRowBackground(Palette.surface)
                     .accessibilityIdentifier("audit.empty")
             } else {
                 Section {
-                    ForEach(events, id: \.id) { event in
+                    ForEach(loaded.value ?? [], id: \.id) { event in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(AuditFormat.title(event.eventType))
@@ -55,13 +53,6 @@ struct AuditLogView: View {
     }
 
     private func load() async {
-        switch await model.loadAuditEvents() {
-        case .success(let loaded):
-            events = loaded
-            error = nil
-        case .failure(let failure):
-            error = failure.message
-        }
-        loading = false
+        loaded.apply(await model.loadAuditEvents())
     }
 }

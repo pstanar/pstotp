@@ -63,7 +63,7 @@ struct RegisterView: View {
                 .accessibilityIdentifier("register.email")
             errorLine
             AuthSubmitButton(title: "Continue", busyTitle: "Continuing…", loading: busy, action: begin)
-                .disabled(busy || email.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(busy || email.isBlank)
                 .accessibilityIdentifier("register.continue")
         }
     }
@@ -77,7 +77,7 @@ struct RegisterView: View {
                 .accessibilityIdentifier("register.code")
             errorLine
             AuthSubmitButton(title: "Verify", busyTitle: "Verifying…", loading: busy, action: verify)
-                .disabled(busy || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(busy || code.isBlank)
                 .accessibilityIdentifier("register.verify")
         }
     }
@@ -89,7 +89,7 @@ struct RegisterView: View {
             PasswordField(title: "Confirm Password", text: $confirm, onSubmit: create)
                 .accessibilityIdentifier("register.confirm")
             errorLine
-            AuthSubmitButton(title: "Create Account", busyTitle: "Creating…", loading: false, action: create)
+            AuthSubmitButton(title: "Create Account", action: create)
                 .disabled(password.isEmpty || confirm.isEmpty)
                 .accessibilityIdentifier("register.create")
         }
@@ -109,6 +109,7 @@ struct RegisterView: View {
     private var codesStep: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Save Your Recovery Codes").font(.title3.weight(.semibold))
+            errorLine
             Text("Store these codes in a safe place. They are the only way to recover your account if you lose all your devices.")
                 .font(.footnote)
                 .foregroundStyle(Palette.onSurfaceVariant)
@@ -117,7 +118,7 @@ struct RegisterView: View {
             }
             .accessibilityIdentifier("register.codes")
 
-            AuthSubmitButton(title: "I've Saved My Codes", busyTitle: "", loading: false, action: onFinished)
+            AuthSubmitButton(title: "I've Saved My Codes", action: onFinished)
                 .accessibilityIdentifier("register.saved")
         }
     }
@@ -178,7 +179,15 @@ struct RegisterView: View {
                 step = .codes
             case .failure(let failure):
                 error = failure.message
-                step = .password
+                if failure.recoveryCodes.isEmpty {
+                    step = .password
+                } else {
+                    // The account exists on the server: the codes must be shown before anything else.
+                    recoveryCodes = failure.recoveryCodes
+                    password = ""
+                    confirm = ""
+                    step = .codes
+                }
             }
         }
     }

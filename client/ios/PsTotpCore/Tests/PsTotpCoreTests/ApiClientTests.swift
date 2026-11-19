@@ -79,6 +79,28 @@ private func body(_ request: URLRequest) -> [String: Any] {
         #expect(await client.hasTokens == false)
     }
 
+    @Test(arguments: [500, 502, 503, 429])
+    func aServerErrorDuringRefreshKeepsTheSession(status: Int) async throws {
+        // A proxy hiccup or an overloaded server says nothing about the tokens.
+        let stub = StubTransport([.init(status: 401), .init(status: status)])
+        let client = ApiClient(baseURL: "https://x.test/api", transport: stub)
+        await client.setTokens(access: "AT", refresh: "RT")
+        await #expect(throws: ApiError.http(status: status, message: ApiErrorMessages.build(statusCode: status, contentType: nil, body: Data()))) {
+            _ = try await VaultApi(client: client).fetchVault()
+        }
+        #expect(await client.hasTokens)
+        #expect(await client.refreshToken == "RT")
+    }
+
+    @Test(arguments: [400, 403])
+    func aRefusedRefreshEndsTheSession(status: Int) async throws {
+        let stub = StubTransport([.init(status: 401), .init(status: status)])
+        let client = ApiClient(baseURL: "https://x.test/api", transport: stub)
+        await client.setTokens(access: "AT", refresh: "RT")
+        await #expect(throws: ApiError.sessionExpired) { _ = try await VaultApi(client: client).fetchVault() }
+        #expect(await client.hasTokens == false)
+    }
+
     @Test func unreachableServerDuringRefreshKeepsTokens() async throws {
         let stub = StubTransport([.init(status: 401), .init(error: URLError(.notConnectedToInternet))])
         let client = ApiClient(baseURL: "https://x.test/api", transport: stub)

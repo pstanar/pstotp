@@ -1,6 +1,6 @@
 import Foundation
 
 extension StringProtocol {
-    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
-    var isBlank: Bool { trimmed.isEmpty }
+    public var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+    public var isBlank: Bool { trimmed.isEmpty }
 }

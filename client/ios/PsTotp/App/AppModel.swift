@@ -287,13 +287,13 @@ final class AppModel {
     func connect(serverUrl: String, email: String, password: String) async -> ConnectOutcome {
         guard let key = vaultKey else { return .failed("Vault is locked") }
         guard let url = ServerURL.normalize(serverUrl) else { return .failed("Enter a valid server address") }
-        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = email.trimmed
         do {
             switch try await auth.login(serverUrl: url, email: email, password: password, localVaultKey: key) {
             case .approved(let serverKey):
-                guard await adoptKey(serverKey) else { return .failed(errorMessage ?? "Connection failed") }
-                connection = .connected(serverUrl: url, email: email)
-                requestSync()
+                if let message = await adoptAndConnect(serverKey, serverUrl: url, email: email, fallback: "Connection failed") {
+                    return .failed(message)
+                }
                 return .connected
             case .pendingApproval:
                 return .pendingApproval
@@ -308,7 +308,7 @@ final class AppModel {
     func beginRegistration(serverUrl: String, email: String) async -> RegistrationStart {
         guard let url = ServerURL.normalize(serverUrl) else { return .failed("Enter a valid server address") }
         do {
-            let reply = try await auth.registerBegin(serverUrl: url, email: email.trimmingCharacters(in: .whitespacesAndNewlines))
+            let reply = try await auth.registerBegin(serverUrl: url, email: email.trimmed)
             return .started(sessionId: reply.registrationSessionId, needsEmailCode: reply.emailVerificationRequired,
                             code: reply.verificationCode)
         } catch {
@@ -320,7 +320,7 @@ final class AppModel {
     func verifyEmail(sessionId: String, code: String) async -> String? {
         do {
             return try await auth.verifyEmail(registrationSessionId: sessionId,
-                                              code: code.trimmingCharacters(in: .whitespacesAndNewlines))
+                                              code: code.trimmed)
                 ? nil : "Invalid verification code"
         } catch {
             return Self.connectionMessage(error)
@@ -331,24 +331,36 @@ final class AppModel {
     /// so edits made while the recovery codes are on screen use the right key.
     /// - Returns: the recovery codes to show the user, or a message.
     func register(serverUrl: String, email: String, password: String, sessionId: String?) async -> Result<[String], ConnectionFailure> {
-        guard let key = vaultKey else { return .failure(.init(message: "Vault is locked")) }
-        guard let url = ServerURL.normalize(serverUrl) else { return .failure(.init(message: "Enter a valid server address")) }
+        guard let key = vaultKey else { return .failure(.init("Vault is locked")) }
+        guard let url = ServerURL.normalize(serverUrl) else { return .failure(.init("Enter a valid server address")) }
         // Android's register screen only asks for 8 characters (the strong rules are for the local setup).
-        if password.count < 8 { return .failure(.init(message: "Password must be at least 8 characters")) }
-        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if password.count < 8 { return .failure(.init("Password must be at least 8 characters")) }
+        let email = email.trimmed
         do {
             let result = try await auth.register(serverUrl: url, email: email, password: password,
                                                  registrationSessionId: sessionId, localVaultKey: key)
-            guard await adoptKey(result.vaultKey) else { return .failure(.init(message: errorMessage ?? "Registration failed")) }
-            connection = .connected(serverUrl: url, email: email)
-            requestSync()
+            if let message = await adoptAndConnect(result.vaultKey, serverUrl: url, email: email, fallback: "Registration failed") {
+                return .failure(.init(message, recoveryCodes: result.recoveryCodes))
+            }
             return .success(result.recoveryCodes)
+        } catch let incomplete as AccountSetupIncomplete {
+            return .failure(.init(incomplete.localizedDescription, recoveryCodes: incomplete.recoveryCodes))
         } catch {
-            return .failure(.init(message: Self.connectionMessage(error)))
+            return .failure(.init(Self.connectionMessage(error)))
         }
     }
 
-    struct ConnectionFailure: Error, Equatable { let message: String }
+    struct ConnectionFailure: Error, Equatable {
+        let message: String
+        /// Set when the server finished the account or the recovery but this device couldn't: the codes
+        /// exist only here and must still be shown.
+        let recoveryCodes: [String]
+
+        init(_ message: String, recoveryCodes: [String] = []) {
+            self.message = message
+            self.recoveryCodes = recoveryCodes
+        }
+    }
 
     /// Change the account password (and this device's copy of it). The vault key is unchanged.
     /// - Returns: nil on success, otherwise a message for the user.
@@ -356,7 +368,7 @@ final class AppModel {
         // Android's rules for this screen: matching, and at least 8 characters.
         if new != confirm { return "Passwords do not match" }
         if new.count < 8 { return "Password must be at least 8 characters" }
-        guard case .connected(let url, let email) = connection, !email.isEmpty, let key = vaultKey else {
+        guard case .connected(_, let email) = connection, !email.isEmpty, let key = vaultKey else {
             return "Not connected or vault locked"
         }
         do {
@@ -368,7 +380,7 @@ final class AppModel {
                 return "Current password is incorrect"
             }
         } catch ApiError.sessionExpired {
-            connection = .expired(serverUrl: url, email: email)
+            markExpired()
             return "Session expired — sign in again, then change the password"
         } catch {
             return Self.connectionMessage(error)
@@ -384,54 +396,35 @@ final class AppModel {
     }
 
     func loadDevices() async -> Result<DevicesSnapshot, ConnectionFailure> {
-        guard let devicesApi else { return .failure(.init(message: "Not connected")) }
-        do {
-            let list = try await devicesApi.fetchDevices().devices
-            let current = try await repository.getSetting(SettingsKeys.deviceId)
-            return .success(DevicesSnapshot(groups: DeviceListing.group(list), currentDeviceId: current))
-        } catch {
-            return .failure(.init(message: deviceFailure(error)))
+        await serverCall(devicesApi) { api in
+            let list = try await api.fetchDevices().devices
+            let current = try await self.repository.getSetting(SettingsKeys.deviceId)
+            return DevicesSnapshot(groups: DeviceListing.group(list), currentDeviceId: current)
         }
     }
 
     /// Let a pending device in by handing it the vault key, wrapped for its public key.
     /// - Returns: nil on success, otherwise a message for the user.
     func approveDevice(_ device: DeviceInfoDto) async -> String? {
-        guard let devicesApi else { return "Not connected" }
         guard let key = vaultKey else { return "Vault is locked" }
-        do {
+        return await serverAction(devicesApi, failure: "Approve failed") { api in
             let envelope = try DeviceApproval.envelope(for: device, vaultKey: key)
-            try await devicesApi.approveDevice(
+            try await api.approveDevice(
                 deviceId: device.deviceId, approvalRequestId: DeviceApproval.approvalRequestId(for: device),
                 deviceEnvelope: envelope)
-            return nil
-        } catch {
-            return "Approve failed: \(deviceFailure(error))"
         }
     }
 
     func rejectDevice(_ device: DeviceInfoDto) async -> String? {
-        guard let devicesApi else { return "Not connected" }
-        do {
-            try await devicesApi.rejectDevice(deviceId: device.deviceId)
-            return nil
-        } catch {
-            return "Reject failed: \(deviceFailure(error))"
-        }
+        await serverAction(devicesApi, failure: "Reject failed") { try await $0.rejectDevice(deviceId: device.deviceId) }
     }
 
     /// Sign an approved device out for good: its tokens and device envelope are revoked on the server.
     func revokeDevice(_ device: DeviceInfoDto) async -> String? {
-        guard let devicesApi else { return "Not connected" }
         if (try? await repository.getSetting(SettingsKeys.deviceId)) == device.deviceId {
             return "This is the device you're using. Use Disconnect in Settings instead."
         }
-        do {
-            try await devicesApi.revokeDevice(deviceId: device.deviceId)
-            return nil
-        } catch {
-            return "Revoke failed: \(deviceFailure(error))"
-        }
+        return await serverAction(devicesApi, failure: "Revoke failed") { try await $0.revokeDevice(deviceId: device.deviceId) }
     }
 
     // MARK: Account recovery
@@ -452,13 +445,13 @@ final class AppModel {
 
     /// Redeem a recovery code. The password is proven here and needed again to finish.
     func startRecovery(serverUrl: String, email: String, password: String, code: String) async -> Result<PendingRecovery, ConnectionFailure> {
-        guard let url = ServerURL.normalize(serverUrl) else { return .failure(.init(message: "Enter a valid server address")) }
+        guard let url = ServerURL.normalize(serverUrl) else { return .failure(.init("Enter a valid server address")) }
         do {
             return .success(try await auth.startRecovery(
-                serverUrl: url, email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-                password: password, recoveryCode: code.trimmingCharacters(in: .whitespacesAndNewlines)))
+                serverUrl: url, email: email.trimmed,
+                password: password, recoveryCode: code.trimmed))
         } catch {
-            return .failure(.init(message: Self.connectionMessage(error)))
+            return .failure(.init(Self.connectionMessage(error)))
         }
     }
 
@@ -482,19 +475,21 @@ final class AppModel {
     func completeRecovery(
         _ pending: PendingRecovery, password: String, envelope: Envelope, replacementDeviceId: String
     ) async -> Result<[String], ConnectionFailure> {
-        guard let key = vaultKey else { return .failure(.init(message: "Vault is locked")) }
+        guard let key = vaultKey else { return .failure(.init("Vault is locked")) }
         do {
             let result = try await auth.completeRecovery(
                 pending: pending, password: password, envelope: envelope,
                 replacementDeviceId: replacementDeviceId, localVaultKey: key)
-            guard await adoptKey(result.vaultKey) else { return .failure(.init(message: errorMessage ?? "Recovery failed")) }
-            if result.signedIn {
-                connection = .connected(serverUrl: pending.serverUrl, email: pending.email)
-                requestSync()
+            if let message = await adoptAndConnect(
+                result.vaultKey, serverUrl: pending.serverUrl, email: pending.email, connected: result.signedIn,
+                fallback: "Recovery failed") {
+                return .failure(.init(message, recoveryCodes: result.recoveryCodes))
             }
             return .success(result.recoveryCodes)
+        } catch let incomplete as AccountSetupIncomplete {
+            return .failure(.init(incomplete.localizedDescription, recoveryCodes: incomplete.recoveryCodes))
         } catch {
-            return .failure(.init(message: Self.connectionMessage(error)))
+            return .failure(.init(Self.connectionMessage(error)))
         }
     }
 
@@ -503,35 +498,20 @@ final class AppModel {
     /// The account's registered passkeys. (Adding one and signing in with one need the platform's
     /// passkey ceremony, which isn't ported yet.)
     func loadPasskeys() async -> Result<[WebAuthnCredentialInfo], ConnectionFailure> {
-        guard let webAuthnApi else { return .failure(.init(message: "Not connected")) }
-        do {
-            return .success(try await webAuthnApi.listCredentials())
-        } catch {
-            return .failure(.init(message: deviceFailure(error)))
-        }
+        await serverCall(webAuthnApi) { try await $0.listCredentials() }
     }
 
     /// - Returns: nil on success, otherwise a message for the user.
     func renamePasskey(id: String, to name: String) async -> String? {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = name.trimmed
         guard !name.isEmpty else { return "Enter a name" }
-        guard let webAuthnApi else { return "Not connected" }
-        do {
-            try await webAuthnApi.renameCredential(credentialId: id, friendlyName: name)
-            return nil
-        } catch {
-            return "Rename failed: \(deviceFailure(error))"
+        return await serverAction(webAuthnApi, failure: "Rename failed") {
+            try await $0.renameCredential(credentialId: id, friendlyName: name)
         }
     }
 
     func revokePasskey(id: String) async -> String? {
-        guard let webAuthnApi else { return "Not connected" }
-        do {
-            try await webAuthnApi.revokeCredential(credentialId: id)
-            return nil
-        } catch {
-            return "Revoke failed: \(deviceFailure(error))"
-        }
+        await serverAction(webAuthnApi, failure: "Revoke failed") { try await $0.revokeCredential(credentialId: id) }
     }
 
     // MARK: Recovery codes
@@ -540,16 +520,16 @@ final class AppModel {
     /// - Returns: the new codes, or a message for the user.
     func regenerateRecoveryCodes(password: String) async -> Result<[String], ConnectionFailure> {
         guard case .connected(_, let email) = connection, !email.isEmpty else {
-            return .failure(.init(message: "Not connected"))
+            return .failure(.init("Not connected"))
         }
-        guard let key = vaultKey else { return .failure(.init(message: "Vault is locked")) }
+        guard let key = vaultKey else { return .failure(.init("Vault is locked")) }
         do {
             switch try await auth.regenerateRecoveryCodes(email: email, password: password, vaultKey: key) {
             case .codes(let codes): return .success(codes)
-            case .incorrectPassword: return .failure(.init(message: "Incorrect password"))
+            case .incorrectPassword: return .failure(.init("Incorrect password"))
             }
         } catch {
-            return .failure(.init(message: deviceFailure(error)))
+            return .failure(.init(serverFailureMessage(error)))
         }
     }
 
@@ -557,20 +537,50 @@ final class AppModel {
 
     /// The account's latest security events, newest first (the server orders them).
     func loadAuditEvents(limit: Int = 100) async -> Result<[AuditEventDto], ConnectionFailure> {
-        guard let auditApi else { return .failure(.init(message: "Not connected")) }
+        await serverCall(auditApi) { try await $0.fetchEvents(limit: limit).events }
+    }
+
+    // MARK: Server calls
+
+    /// Runs a call against one of the server APIs and turns a failure into a message (and an expired
+    /// session into the "sign in again" state).
+    private func serverCall<API: Sendable, T: Sendable>(_ api: API?, _ call: (API) async throws -> T) async -> Result<T, ConnectionFailure> {
+        guard let api else { return .failure(.init("Not connected")) }
         do {
-            return .success(try await auditApi.fetchEvents(limit: limit).events)
+            return .success(try await call(api))
         } catch {
-            return .failure(.init(message: deviceFailure(error)))
+            return .failure(.init(serverFailureMessage(error)))
         }
     }
 
+    /// Like `serverCall` for actions with no result: nil on success, otherwise "<prefix>: <reason>".
+    private func serverAction<API: Sendable>(_ api: API?, failure prefix: String, _ call: (API) async throws -> Void) async -> String? {
+        guard api != nil else { return "Not connected" }
+        if case .failure(let failure) = await serverCall(api, call) { return "\(prefix): \(failure.message)" }
+        return nil
+    }
+
     /// A message for a failed server call; an expired session also moves the app to "sign in again".
-    private func deviceFailure(_ error: Error) -> String {
-        if case ApiError.sessionExpired = error, case .connected(let url, let email) = connection {
-            connection = .expired(serverUrl: url, email: email)
-        }
+    private func serverFailureMessage(_ error: Error) -> String {
+        if case ApiError.sessionExpired = error { markExpired() }
         return Self.connectionMessage(error)
+    }
+
+    /// The server no longer accepts this device's session: keep the account, ask for a new sign-in.
+    private func markExpired() {
+        if case .connected(let url, let email) = connection { connection = .expired(serverUrl: url, email: email) }
+    }
+
+    /// Switches to the account's vault key and, when `connected`, marks this device connected and starts
+    /// syncing. Shared by sign-in, registration and recovery.
+    /// - Returns: nil on success, otherwise a message.
+    private func adoptAndConnect(_ key: Data, serverUrl: String, email: String, connected: Bool = true, fallback: String) async -> String? {
+        guard await adoptKey(key) else { return errorMessage ?? fallback }
+        if connected {
+            connection = .connected(serverUrl: serverUrl, email: email)
+            requestSync()
+        }
+        return nil
     }
 
     func disconnect() async {
@@ -597,7 +607,7 @@ final class AppModel {
 
     /// Push local changes, pull the server's, and refresh the list.
     func syncNow() async {
-        guard case .connected(let url, let email) = connection, let sync, syncState != .syncing else { return }
+        guard case .connected = connection, let sync, syncState != .syncing else { return }
         syncState = .syncing
         repeat {
             syncAgain = false
@@ -611,7 +621,7 @@ final class AppModel {
                 syncState = .failed(message)
             case .sessionExpired:
                 syncState = .idle
-                connection = .expired(serverUrl: url, email: email)
+                markExpired()
                 syncAgain = false
             case .notConnected:
                 syncState = .idle

@@ -7,9 +7,7 @@ import SwiftUI
 struct PasskeysView: View {
     @Bindable var model: AppModel
 
-    @State private var passkeys: [WebAuthnCredentialInfo] = []
-    @State private var loading = true
-    @State private var error: String?
+    @State private var loaded = Loadable<[WebAuthnCredentialInfo]>()
     @State private var renaming: WebAuthnCredentialInfo?
     @State private var newName = ""
     @State private var revoking: WebAuthnCredentialInfo?
@@ -24,12 +22,12 @@ struct PasskeysView: View {
             }
             .listRowBackground(Color.clear)
 
-            if let error {
+            if let error = loaded.error {
                 Section { AuthError(message: error).accessibilityIdentifier("passkeys.error") }
                     .listRowBackground(Color.clear)
             }
 
-            if loading && passkeys.isEmpty {
+            if loaded.isLoading && passkeys.isEmpty {
                 Section { HStack { Spacer(); ProgressView(); Spacer() } }
                     .listRowBackground(Color.clear)
             } else if passkeys.isEmpty {
@@ -97,15 +95,10 @@ struct PasskeysView: View {
         return text
     }
 
+    private var passkeys: [WebAuthnCredentialInfo] { loaded.value ?? [] }
+
     private func load() async {
-        switch await model.loadPasskeys() {
-        case .success(let loaded):
-            passkeys = loaded
-            error = nil
-        case .failure(let failure):
-            error = failure.message
-        }
-        loading = false
+        loaded.apply(await model.loadPasskeys())
     }
 
     /// Runs a change, then refreshes the list; a failure is shown above it.
@@ -113,7 +106,7 @@ struct PasskeysView: View {
         Task {
             let problem = await action()
             await load()
-            if let problem { error = problem }
+            if let problem { loaded.error = problem }
         }
     }
 }

@@ -6,6 +6,10 @@ import GRDB
 /// Entries are stored as AES-256-GCM encrypted JSON payloads. The entry ID is the associated data,
 /// binding each ciphertext to its entry. The vault key is passed in per call and never stored here.
 ///
+/// Every local change is marked unsynced (`pendingSync`, `pendingReorder`) whatever the mode: the flag means
+/// "the server hasn't seen this", so changes made while disconnected, or before the first connect, are
+/// pushed when the device next connects instead of being left behind (and later overwritten by a pull).
+///
 /// Biometric key storage lives in the app (`KeychainBiometricKeyStore`): it needs the Keychain and
 /// LocalAuthentication. Not yet ported from Android: `runInTransaction` (only the sync service uses it).
 public final class VaultRepository: Sendable {
@@ -87,7 +91,6 @@ public final class VaultRepository: Sendable {
         let encrypted = try Self.encryptPayload(vaultKey: vaultKey, id: id, plaintext: plaintext)
 
         let sortOrder = try await db.writer.write { db in
-            let connected = try SettingsQueries.get(db, SettingsKeys.mode) == SettingsKeys.modeConnected
             let sortOrder = (try VaultEntryQueries.maxSortOrder(db) ?? -1) + 1
             try VaultEntryQueries.upsert(db, VaultEntryRecord(
                 id: id,
@@ -95,7 +98,7 @@ public final class VaultRepository: Sendable {
                 sortOrder: sortOrder,
                 createdAt: timestamp,
                 updatedAt: timestamp,
-                pendingSync: connected))
+                pendingSync: true))
             return sortOrder
         }
 
@@ -111,7 +114,7 @@ public final class VaultRepository: Sendable {
             guard var existing = try VaultEntryQueries.byId(db, entry.id) else { return }
             existing.encryptedPayload = encrypted
             existing.updatedAt = timestamp
-            existing.pendingSync = try SettingsQueries.get(db, SettingsKeys.mode) == SettingsKeys.modeConnected
+            existing.pendingSync = true
             try VaultEntryQueries.upsert(db, existing)
         }
     }
@@ -130,12 +133,11 @@ public final class VaultRepository: Sendable {
         }
 
         try await db.writer.write { db in
-            let connected = try SettingsQueries.get(db, SettingsKeys.mode) == SettingsKeys.modeConnected
             for (id, encrypted) in updates {
                 guard var existing = try VaultEntryQueries.byId(db, id), existing.deletedAt == nil else { continue }
                 existing.encryptedPayload = encrypted
                 existing.updatedAt = timestamp
-                existing.pendingSync = connected
+                existing.pendingSync = true
                 try VaultEntryQueries.upsert(db, existing)
             }
             var sortOrder = (try VaultEntryQueries.maxSortOrder(db) ?? -1) + 1
@@ -146,7 +148,7 @@ public final class VaultRepository: Sendable {
                     sortOrder: sortOrder,
                     createdAt: timestamp,
                     updatedAt: timestamp,
-                    pendingSync: connected))
+                    pendingSync: true))
                 sortOrder += 1
             }
         }
@@ -156,9 +158,8 @@ public final class VaultRepository: Sendable {
     public func deleteEntry(id: String) async throws {
         let timestamp = now()
         try await db.writer.write { db in
-            let connected = try SettingsQueries.get(db, SettingsKeys.mode) == SettingsKeys.modeConnected
             try VaultEntryQueries.softDelete(db, id: id, timestamp: timestamp)
-            if connected { try VaultEntryQueries.markPendingSync(db, id: id) }
+            try VaultEntryQueries.markPendingSync(db, id: id)
             try EntryUsageQueries.delete(db, entryId: id)
         }
     }
@@ -168,9 +169,7 @@ public final class VaultRepository: Sendable {
             for (index, id) in orderedIds.enumerated() {
                 try VaultEntryQueries.updateSortOrder(db, id: id, sortOrder: index)
             }
-            if try SettingsQueries.get(db, SettingsKeys.mode) == SettingsKeys.modeConnected {
-                try SettingsQueries.set(db, SettingsKeys.pendingReorder, "true")
-            }
+            try SettingsQueries.set(db, SettingsKeys.pendingReorder, "true")
         }
     }
 

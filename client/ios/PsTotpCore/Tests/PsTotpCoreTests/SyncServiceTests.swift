@@ -174,6 +174,28 @@ struct SyncServiceTests {
         #expect(server.entries[entry.id]?.version == 2)
     }
 
+    @Test func changesMadeWhileDisconnectedAreSentWhenTheDeviceReconnects() async throws {
+        let synced = try await addLocal("Synced")
+        let gone = try await addLocal("Gone")
+        _ = await sync.fullSync()                                       // both on the server
+
+        // Disconnect (mode standalone), then edit, add and delete.
+        try await repo.setSetting(SettingsKeys.mode, SettingsKeys.modeStandalone)
+        let edited = EntryValidation.edited(synced, issuer: "Edited offline", accountName: "me", icon: nil)
+        try await repo.updateEntry(vaultKey: key, entry: edited)
+        let added = try await addLocal("Added offline")
+        try await repo.deleteEntry(id: gone.id)
+
+        // Reconnect to the same account: nothing re-encrypts, but the changes were remembered.
+        try await repo.setSetting(SettingsKeys.mode, SettingsKeys.modeConnected)
+        guard case .success(_, let pushed) = await sync.fullSync() else { Issue.record("sync failed"); return }
+        #expect(pushed == 3)                                            // the edit, the addition, the deletion
+        #expect(server.entries[added.id] != nil)
+        #expect(server.entries[gone.id]?.deleted == true)
+        #expect(server.entries[synced.id]?.version == 2)
+        #expect(try await issuers() == ["Edited offline", "Added offline"])
+    }
+
     // MARK: Deletions
 
     @Test func localDeletionIsPushedThenForgotten() async throws {

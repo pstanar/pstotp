@@ -14,12 +14,10 @@ public enum AuditFormat {
         return result
     }
 
-    public static func date(_ iso: String) -> Date? { ServerTime.date(iso) }
-
     /// `Nov 19, 12:30` in the user's time zone and locale; the first 16 characters of the raw text
     /// when it can't be read, like Android.
     public static func timestamp(_ iso: String, timeZone: TimeZone = .current, locale: Locale = .current) -> String {
-        guard let date = date(iso) else { return String(iso.prefix(16)) }
+        guard let date = ServerTime.date(iso) else { return String(iso.prefix(16)) }
         var style = Date.FormatStyle(locale: locale, timeZone: timeZone)
         style = style.month(.abbreviated).day().hour().minute()
         return date.formatted(style)

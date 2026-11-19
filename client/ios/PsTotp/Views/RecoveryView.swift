@@ -93,9 +93,9 @@ struct RecoveryView: View {
                 .textInputAutocapitalization(.characters)
                 .accessibilityIdentifier("recovery.code")
             errorLine
-            AuthSubmitButton(title: "Recover Account", busyTitle: "", loading: false, action: start)
-                .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty
-                          || code.trimmingCharacters(in: .whitespaces).isEmpty)
+            AuthSubmitButton(title: "Recover Account", action: start)
+                .disabled(email.isBlank || password.isEmpty
+                          || code.isBlank)
                 .accessibilityIdentifier("recovery.start")
         }
     }
@@ -128,7 +128,7 @@ struct RecoveryView: View {
             PasswordField(title: "Password", text: $password, onSubmit: { check(pending) })
                 .accessibilityIdentifier("recovery.password")
             errorLine
-            AuthSubmitButton(title: "Check Again", busyTitle: "", loading: false) { check(pending) }
+            AuthSubmitButton(title: "Check Again") { check(pending) }
                 .accessibilityIdentifier("recovery.check")
             forgetButton
         }
@@ -143,7 +143,7 @@ struct RecoveryView: View {
             PasswordField(title: "Password", text: $password, onSubmit: { finish(pending, envelope, deviceId) })
                 .accessibilityIdentifier("recovery.password")
             errorLine
-            AuthSubmitButton(title: "Finish Recovery", busyTitle: "", loading: false) { finish(pending, envelope, deviceId) }
+            AuthSubmitButton(title: "Finish Recovery") { finish(pending, envelope, deviceId) }
                 .disabled(password.isEmpty)
                 .accessibilityIdentifier("recovery.finish")
             forgetButton
@@ -164,6 +164,7 @@ struct RecoveryView: View {
     private func codesStep(_ codes: [String]) -> some View {
         Group {
             Text("Account Recovered").font(.title3.weight(.semibold))
+            errorLine
             Text("Save your new recovery codes. The old codes are no longer valid.")
                 .font(.footnote)
                 .foregroundStyle(Palette.onSurfaceVariant)
@@ -173,7 +174,7 @@ struct RecoveryView: View {
             Text("These codes will not be shown again.")
                 .font(.footnote)
                 .foregroundStyle(Palette.error)
-            AuthSubmitButton(title: "I've Saved My Codes", busyTitle: "", loading: false, action: onFinished)
+            AuthSubmitButton(title: "I've Saved My Codes", action: onFinished)
                 .accessibilityIdentifier("recovery.saved")
         }
     }
@@ -258,7 +259,13 @@ struct RecoveryView: View {
                 step = .codes(codes)
             case .failure(let failure):
                 error = failure.message
-                step = (await model.pendingRecovery()) == nil ? .input : .ready(pending, envelope, deviceId)
+                if failure.recoveryCodes.isEmpty {
+                    step = (await model.pendingRecovery()) == nil ? .input : .ready(pending, envelope, deviceId)
+                } else {
+                    // The server finished the recovery: the new codes must be shown before anything else.
+                    password = ""
+                    step = .codes(failure.recoveryCodes)
+                }
             }
         }
     }

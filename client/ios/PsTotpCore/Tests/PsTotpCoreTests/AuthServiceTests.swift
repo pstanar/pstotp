@@ -179,6 +179,9 @@ struct AuthServiceTests {
         ])
         let result = try await service.login(serverUrl: url, email: "a@b.c", password: "wrong", localVaultKey: localKey0)
         #expect(result == .error("No envelope available to decrypt vault key"))
+        // The session the server granted is not left behind.
+        #expect(try secrets.get(.accessToken) == nil && secrets.get(.refreshToken) == nil)
+        #expect(try await service.isConnected() == false)
         #expect(try await repo.getSetting(SettingsKeys.mode) == nil)
         #expect(try await repo.getSetting(SettingsKeys.passwordVerifier) == nil)
     }
@@ -238,7 +241,7 @@ struct AuthServiceTests {
         let serverKey = KeyDerivation.generateVaultKey()
         let ak = try authKey("pw")
         let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: ak), plaintext: serverKey)
-        let (service, _, _) = make([challengeReply, .init(body: """
+        let (service, _, client) = make([challengeReply, .init(body: """
             {"userId":"u","accessToken":"AT","refreshToken":"RT","device":{"deviceId":"d","status":"approved"},"envelopes":{"password":\(envelopeJSON(envelope))}}
             """)])
         await #expect(throws: VaultKeyMismatchError.self) {
@@ -250,6 +253,10 @@ struct AuthServiceTests {
         #expect(try await db.writer.read { try VaultEntryRecord.fetchAll($0).map(\.encryptedPayload) } == before)
         #expect(try await repo.getAllEntries(vaultKey: localKey0).count == 3)
         #expect(biometricCleared.get() == 0)
+        // …and no live session is left on a device that couldn't finish connecting.
+        #expect(try secrets.get(.accessToken) == nil && secrets.get(.refreshToken) == nil)
+        let hasTokens = await client.hasTokens
+        #expect(!hasTokens)
     }
 
     @Test func registeringReencryptsLocalEntriesToo() async throws {
@@ -261,6 +268,8 @@ struct AuthServiceTests {
 
     @Test func sameKeyLeavesEntriesAlone() async throws {
         try await addLocalEntries(2)
+        // Pretend those were already synced: connecting with the same key must not mark them again.
+        try await db.writer.write { try $0.execute(sql: "UPDATE vault_entries SET pendingSync = 0") }
         let ak = try authKey("pw")
         let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: ak), plaintext: localKey0)
         let (service, _, _) = make([challengeReply, .init(body: """
@@ -547,6 +556,82 @@ struct AuthServiceTests {
                 replacementDeviceId: recoveredDeviceId, localVaultKey: localKey)
         }
         #expect(try await repo.unlockVault(password: "LocalPassw0rd!") == localKey)   // nothing changed locally
+    }
+
+    // MARK: When the device can't finish what the server started
+
+    /// A secret store whose writes can be made to fail.
+    final class FlakySecretStore: SecretStore, @unchecked Sendable {
+        let inner = InMemorySecretStore()
+        private let lock = NSLock()
+        private var _failWrites = false
+        var failWrites: Bool { get { lock.withLock { _failWrites } } set { lock.withLock { _failWrites = newValue } } }
+        struct WriteFailed: Error {}
+        func get(_ key: SecretKey) throws -> String? { try inner.get(key) }
+        func setAll(_ items: [SecretKey: String]) throws {
+            if failWrites { throw WriteFailed() }
+            try inner.setAll(items)
+        }
+        func remove(_ key: SecretKey) throws { try inner.remove(key) }
+    }
+
+    @Test func rotatedTokensThatCantBeStoredAreDroppedNotLeftRevoked() async throws {
+        let flaky = FlakySecretStore()
+        try await repo.setSetting(SettingsKeys.serverUrl, url)
+        try flaky.setAll([.accessToken: "AT", .refreshToken: "RT"])
+        let stub = StubTransport([.init(status: 401), .init(body: #"{"accessToken":"AT2","refreshToken":"RT2"}"#),
+                                  .init(body: #"{"entries":[],"serverTime":"t"}"#)])
+        let client = ApiClient(baseURL: "", transport: stub)
+        let service = AuthService(repository: repo, client: client, secrets: flaky)
+        try await service.restoreSession()
+
+        flaky.failWrites = true     // the Keychain refuses the new pair
+        _ = try await VaultApi(client: client).fetchVault()
+        // This session carries on with the new tokens, but the stored (now revoked) pair is gone, so the
+        // next launch asks for a sign-in instead of trying a token that can never work.
+        #expect(await client.accessToken == "AT2")
+        #expect(try flaky.get(.accessToken) == nil && flaky.get(.refreshToken) == nil)
+    }
+
+    @Test func registrationKeepsTheRecoveryCodesWhenTheDeviceCantFinishSettingUp() async throws {
+        try await addLocalEntries(2)
+        let (service, _, client) = make([.init(body: #"{"userId":"u1","deviceId":"d1","accessToken":"AT","refreshToken":"RT"}"#)])
+        let thrown = await #expect(throws: AccountSetupIncomplete.self) {
+            // A local key that decrypts nothing: re-encrypting the local accounts fails after the server said yes.
+            _ = try await service.register(serverUrl: url, email: "a@b.c", password: "longenough",
+                                           registrationSessionId: nil, localVaultKey: KeyDerivation.generateVaultKey())
+        }
+        let incomplete = try #require(thrown)
+        #expect(incomplete.recoveryCodes.count == RecoveryCodes.count)
+        #expect(incomplete.errorDescription?.contains("Save your recovery codes") == true)
+        // No half-connected state: no tokens, not connected, local vault untouched.
+        #expect(try secrets.get(.accessToken) == nil)
+        let hasTokens = await client.hasTokens
+        #expect(!hasTokens)
+        #expect(try await repo.getSetting(SettingsKeys.mode) == nil)
+        #expect(try await repo.getAllEntries(vaultKey: localKey0).count == 2)
+    }
+
+    @Test func recoveryKeepsTheNewCodesWhenTheDeviceCantFinishSettingUp() async throws {
+        let password = "RecPassw0rd!"
+        let accountKey = KeyDerivation.generateVaultKey()
+        let envelope = try EnvelopeHelper.encrypt(
+            key: KeyDerivation.deriveRecoveryUnlockKey(recoverySeed: try authKey(password)), plaintext: accountKey)
+        let localKey = try await repo.setupPassword("LocalPassw0rd!")
+        try await repo.addEntry(vaultKey: localKey, plaintext: VaultEntryPlaintext(issuer: "L", accountName: "me", secret: "JBSWY3DPEHPK3PXP"))
+        let (starter, _, _) = make([challengeReply, .init(body: #"{"recoverySessionId":"s","requiresWebAuthn":false,"releaseEarliestAt":"2026-11-20T10:00:00Z"}"#)])
+        let pending = try await starter.startRecovery(serverUrl: url, email: "a@b.c", password: password, recoveryCode: "X")
+
+        let (service, _, _) = make([challengeReply, .init(body: #"{"userId":"u1","accessToken":"AT","refreshToken":"RT"}"#)])
+        let thrown = await #expect(throws: AccountSetupIncomplete.self) {
+            // The wrong local key makes the re-encryption fail after the server completed the recovery.
+            _ = try await service.completeRecovery(pending: pending, password: password, envelope: envelope,
+                                                   replacementDeviceId: "dev", localVaultKey: KeyDerivation.generateVaultKey())
+        }
+        #expect(try #require(thrown).recoveryCodes.count == RecoveryCodes.count)
+        // The server's recovery is over, so it is not offered for resuming; and no session is kept.
+        #expect(try await service.pendingRecovery() == nil)
+        #expect(try secrets.get(.accessToken) == nil)
     }
 
     // MARK: Registration

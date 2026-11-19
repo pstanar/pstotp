@@ -12,9 +12,8 @@ public struct AuthApi: Sendable {
         return try await client.postPublic("/auth/login", body: Body(email: email, device: device))
     }
 
-    public func completeLogin(loginSessionId: String, clientProof: String) async throws -> LoginCompleteResponse {
-        try await client.postPublic("/auth/login/complete",
-                                    body: ClientProofDto(loginSessionId: loginSessionId, clientProof: clientProof))
+    public func completeLogin(_ proof: ClientProofDto) async throws -> LoginCompleteResponse {
+        try await client.postPublic("/auth/login/complete", body: proof)
     }
 
     public func registerBegin(email: String) async throws -> BeginRegistrationResponse {

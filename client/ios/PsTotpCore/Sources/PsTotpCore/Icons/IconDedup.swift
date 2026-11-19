@@ -94,21 +94,25 @@ public enum IconDedup {
     /// counts as already there. Icons beyond a cap are left out. Used when a device that has its own
     /// library first meets the account's, so neither side's icons are thrown away.
     static func merge(server: [LibraryIcon], local: [LibraryIcon]) -> [LibraryIcon] {
-        var merged = server
+        var merged = backfillHashes(server)
         var bytes = blobByteLength(merged)
-        var ids = Set(server.map(\.id))
+        var ids = Set(merged.map(\.id))
         for icon in backfillHashes(local) where !ids.contains(icon.id) {
             let print = Fingerprint(dataHash: icon.dataHash ?? "", sourceHash: icon.sourceHash)
-            if findDuplicate(in: backfillHashes(merged), print) != nil { continue }
+            if findDuplicate(in: merged, print) != nil { continue }
             guard merged.count < IconLibraryLimits.maxIcons else { break }
-            let cost = ((try? JSONSerialization.data(withJSONObject: icon.json, options: [.withoutEscapingSlashes]).count)
-                        ?? .max / 2) + 1
+            let cost = jsonCost(icon)
             guard bytes + cost <= maxPlaintextBytes else { continue }
             merged.append(icon)
             ids.insert(icon.id)
             bytes += cost
         }
         return merged
+    }
+
+    /// What one more icon adds to the blob's JSON: its own JSON plus a separator.
+    private static func jsonCost(_ icon: LibraryIcon) -> Int {
+        ((try? JSONSerialization.data(withJSONObject: icon.json, options: [.withoutEscapingSlashes]).count) ?? .max / 2) + 1
     }
 
     /// De-dups against `current` and within the batch; skipped icons beyond a cap count as overflow.
@@ -128,8 +132,7 @@ public enum IconDedup {
                 result.overflow += 1
             } else {
                 let candidate = makeIcon(item, fingerprint, id: makeId(), createdAt: now())
-                let cost = ((try? JSONSerialization.data(
-                    withJSONObject: candidate.json, options: [.withoutEscapingSlashes]).count) ?? .max / 2) + 1
+                let cost = jsonCost(candidate)
                 if bytes + cost > maxPlaintextBytes {
                     result.overflow += 1
                 } else {

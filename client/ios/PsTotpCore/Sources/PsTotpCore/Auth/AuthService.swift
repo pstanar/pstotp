@@ -62,6 +62,18 @@ public enum RecoveryError: Error, Equatable, LocalizedError {
     }
 }
 
+/// The server has created the account (or finished the recovery), but this device couldn't finish setting
+/// itself up. The recovery codes exist only here, so they travel with the error: the user must still be shown
+/// them. The session was dropped; signing in with the email and password completes the setup.
+public struct AccountSetupIncomplete: Error, LocalizedError, Equatable {
+    public let recoveryCodes: [String]
+    public let detail: String
+
+    public var errorDescription: String? {
+        "Your account is ready on the server, but this device couldn't finish setting up (\(detail)). Save your recovery codes, then sign in with your email and password."
+    }
+}
+
 public enum RegenerateCodesResult: Sendable, Equatable {
     case codes([String])
     /// The password doesn't match this vault's. Nothing was sent: the recovery envelope is wrapped
@@ -131,23 +143,10 @@ public final class AuthService: Sendable {
     ///   local entries are re-encrypted with the new one in the same transaction.
     public func login(serverUrl: String, email: String, password: String, localVaultKey: Data) async throws -> LoginResult {
         await prepare(serverUrl: serverUrl)
-        let ecdhKey = try loadOrGenerateEcdhKey()
-        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
+        let challenge = try await serverChallenge(email: email, password: password)
+        let (ecdhKey, kdf, salt, authKey) = (challenge.ecdhKey, challenge.kdf, challenge.salt, challenge.authKey)
 
-        let challenge = try await authApi.requestLoginChallenge(email: email, device: device)
-        let kdf = challenge.challenge.kdf
-        guard let nonce = Data(base64Encoded: challenge.challenge.nonce),
-              let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
-
-        let authKey = try await Self.offMainThread {
-            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
-                            iterations: kdf.iterations, parallelism: kdf.parallelism)
-        }
-        let verifier = KeyDerivation.deriveVerifier(authKey: authKey)
-        let proof = try ClientProof.compute(verifier: verifier, nonce: nonce, loginSessionId: challenge.loginSessionId)
-
-        let result = try await authApi.completeLogin(
-            loginSessionId: challenge.loginSessionId, clientProof: proof.base64EncodedString())
+        let result = try await authApi.completeLogin(try challenge.proof())
         try await persistTokens(result.accessToken, result.refreshToken)
 
         if result.device.status == "pending" {
@@ -156,21 +155,28 @@ public final class AuthService: Sendable {
             return .pendingApproval(approvalRequestId: result.approvalRequestId ?? result.device.deviceId)
         }
 
-        guard let serverVaultKey = Self.decryptVaultKey(result.envelopes, authKey: authKey, devicePrivateKey: ecdhKey) else {
-            return .error("No envelope available to decrypt vault key")
+        // The server has granted a session. If this device can't finish setting up, don't leave it behind.
+        do {
+            guard let serverVaultKey = Self.decryptVaultKey(result.envelopes, authKey: authKey, devicePrivateKey: ecdhKey) else {
+                await discardSession()
+                return .error("No envelope available to decrypt vault key")
+            }
+
+            // The local envelope must open with the pinned parameters, because that is what offline unlock
+            // derives with. An account registered with other parameters (the server stores whatever the
+            // registering client sent) would otherwise lock the user out of their own vault.
+            let localAuthKey = try await Self.localAuthKey(kdf: kdf, serverAuthKey: authKey, password: password, salt: salt)
+
+            // Adopt the server's vault key locally so offline password/biometric unlocks unwrap to the key
+            // synced entries are encrypted with (a device that had its own local vault gets a different one).
+            try await adopt(vaultKey: serverVaultKey, replacing: localVaultKey, salt: salt, authKey: localAuthKey,
+                            session: (serverUrl, result.userId, result.device.deviceId, email))
+            await rebuildDeviceEnvelope(vaultKey: serverVaultKey, key: ecdhKey)
+            return .approved(serverVaultKey: serverVaultKey)
+        } catch {
+            await discardSession()
+            throw error
         }
-
-        // The local envelope must open with the pinned parameters, because that is what offline unlock
-        // derives with. An account registered with other parameters (the server stores whatever the
-        // registering client sent) would otherwise lock the user out of their own vault.
-        let localAuthKey = try await Self.localAuthKey(kdf: kdf, serverAuthKey: authKey, password: password, salt: salt)
-
-        // Adopt the server's vault key locally so offline password/biometric unlocks unwrap to the key
-        // synced entries are encrypted with (a device that had its own local vault gets a different one).
-        try await adopt(vaultKey: serverVaultKey, replacing: localVaultKey, salt: salt, authKey: localAuthKey,
-                        session: (serverUrl, result.userId, result.device.deviceId, email))
-        await rebuildDeviceEnvelope(vaultKey: serverVaultKey, key: ecdhKey)
-        return .approved(serverVaultKey: serverVaultKey)
     }
 
     // MARK: Registration
@@ -192,32 +198,29 @@ public final class AuthService: Sendable {
         await prepare(serverUrl: serverUrl)
 
         let vaultKey = KeyDerivation.generateVaultKey()
-        let salt = KeyDerivation.generateSalt()
-
-        let authKey = try await Self.offMainThread { try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt) }
-        let verifier = KeyDerivation.deriveVerifier(authKey: authKey)
-        let passwordEnvelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: authKey), plaintext: vaultKey)
+        let password = try await Self.newPasswordMaterial(password: password, vaultKey: vaultKey)
 
         let ecdhKey = Ecdh.generateKeyPair()
-        let publicKey = Ecdh.exportPublicKey(ecdhKey.publicKey)
         let deviceEnvelope = try Ecdh.packDeviceEnvelope(vaultKey: vaultKey, recipientPublicKey: ecdhKey.publicKey)
-
-        let (recovery, recoveryCodes) = try await Self.makeRecovery(authKey: authKey, vaultKey: vaultKey)
+        let (recovery, recoveryCodes) = try await Self.makeRecovery(authKey: password.authKey, vaultKey: vaultKey)
 
         let result = try await authApi.register(
             registrationSessionId: registrationSessionId, email: email,
-            passwordVerifier: PasswordVerifierDto(verifier: verifier.base64EncodedString(),
-                                                  kdf: .default(saltBase64: salt.base64EncodedString())),
-            passwordEnvelope: passwordEnvelope,
-            device: .ios(publicKeyBase64: publicKey.base64EncodedString()),
-            deviceEnvelope: deviceEnvelope,
-            recovery: recovery)
+            passwordVerifier: password.verifierDto, passwordEnvelope: password.envelope,
+            device: .ios(for: ecdhKey), deviceEnvelope: deviceEnvelope, recovery: recovery)
 
-        // The device key goes first: without it the device envelope the server now holds is unusable.
-        try persistEcdhKey(ecdhKey)
-        try await persistTokens(result.accessToken, result.refreshToken)
-        try await adopt(vaultKey: vaultKey, replacing: localVaultKey, salt: salt, authKey: authKey,
-                        session: (serverUrl, result.userId, result.deviceId, email))
+        // The account exists now, and the recovery codes exist nowhere else: whatever goes wrong below, the
+        // user must still get them.
+        do {
+            // The device key goes first: without it the device envelope the server now holds is unusable.
+            try persistEcdhKey(ecdhKey)
+            try await persistTokens(result.accessToken, result.refreshToken)
+            try await adopt(vaultKey: vaultKey, replacing: localVaultKey, salt: password.salt, authKey: password.authKey,
+                            session: (serverUrl, result.userId, result.deviceId, email))
+        } catch {
+            await discardSession()
+            throw AccountSetupIncomplete(recoveryCodes: recoveryCodes, detail: error.localizedDescription)
+        }
         return RegistrationResult(vaultKey: vaultKey, recoveryCodes: recoveryCodes)
     }
 
@@ -240,34 +243,13 @@ public final class AuthService: Sendable {
     public func changePassword(
         email: String, currentPassword: String, newPassword: String, vaultKey: Data
     ) async throws -> ChangePasswordResult {
-        let ecdhKey = try loadOrGenerateEcdhKey()
-        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
-
-        let challenge = try await authApi.requestLoginChallenge(email: email, device: device)
-        let kdf = challenge.challenge.kdf
-        guard let nonce = Data(base64Encoded: challenge.challenge.nonce),
-              let currentSalt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
-
-        let newSalt = KeyDerivation.generateSalt()
-        let (currentAuthKey, newAuthKey) = try await Self.offMainThread {
-            (try Argon2.hash(password: currentPassword, salt: currentSalt, memoryMb: kdf.memoryMb,
-                             iterations: kdf.iterations, parallelism: kdf.parallelism),
-             try KeyDerivation.derivePasswordAuthKey(password: newPassword, salt: newSalt))
-        }
-        let proof = try ClientProof.compute(
-            verifier: KeyDerivation.deriveVerifier(authKey: currentAuthKey), nonce: nonce,
-            loginSessionId: challenge.loginSessionId)
-
-        let newVerifier = KeyDerivation.deriveVerifier(authKey: newAuthKey)
-        let newEnvelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: newAuthKey), plaintext: vaultKey)
+        let challenge = try await serverChallenge(email: email, password: currentPassword)
+        let new = try await Self.newPasswordMaterial(password: newPassword, vaultKey: vaultKey)
 
         let response: RefreshResponse
         do {
             response = try await authApi.changePassword(
-                currentProof: ClientProofDto(loginSessionId: challenge.loginSessionId, clientProof: proof.base64EncodedString()),
-                newVerifier: PasswordVerifierDto(verifier: newVerifier.base64EncodedString(),
-                                                 kdf: .default(saltBase64: newSalt.base64EncodedString())),
-                newPasswordEnvelope: newEnvelope)
+                currentProof: try challenge.proof(), newVerifier: new.verifierDto, newPasswordEnvelope: new.envelope)
         } catch ApiError.http(401, _) {
             // The session is fresh and the token was just refreshed if needed, so a 401 here means the
             // proof was wrong. (The server leaves the login session unused in that case.)
@@ -276,12 +258,8 @@ public final class AuthService: Sendable {
 
         // The local password material first: the server has already changed, so offline unlock has to
         // match it before anything else can fail. (The vault key is unchanged: no biometric reset.)
-        let wrapped = try AesGcm.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: newAuthKey), plaintext: vaultKey)
-        try await repository.updateSettings(set: [
-            SettingsKeys.kdfSalt: newSalt.base64EncodedString(),
-            SettingsKeys.passwordVerifier: newVerifier.base64EncodedString(),
-            SettingsKeys.encryptedVaultKey: wrapped.base64EncodedString(),
-        ])
+        try await repository.updateSettings(set: Self.passwordSettings(
+            salt: new.salt, verifier: new.verifier, wrapped: try EnvelopeHelper.toRaw(new.envelope)))
         try await persistTokens(response.accessToken, response.refreshToken)
         return .success
     }
@@ -296,18 +274,9 @@ public final class AuthService: Sendable {
     public func regenerateRecoveryCodes(email: String, password: String, vaultKey: Data) async throws -> RegenerateCodesResult {
         guard try await repository.unlockVault(password: password) != nil else { return .incorrectPassword }
 
-        let ecdhKey = try loadOrGenerateEcdhKey()
-        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
-        let challenge = try await authApi.requestLoginChallenge(email: email, device: device)
-        let kdf = challenge.challenge.kdf
-        guard let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
-
-        // Recovery derives this key from the password with the server's parameters, so does this.
-        let authKey = try await Self.offMainThread {
-            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
-                            iterations: kdf.iterations, parallelism: kdf.parallelism)
-        }
-        let (recovery, codes) = try await Self.makeRecovery(authKey: authKey, vaultKey: vaultKey)
+        // Recovery derives its key from the password with the server's parameters, so does this.
+        let challenge = try await serverChallenge(email: email, password: password)
+        let (recovery, codes) = try await Self.makeRecovery(authKey: challenge.authKey, vaultKey: vaultKey)
         try await recoveryApi.regenerateCodes(rotatedRecovery: recovery)
         return .codes(codes)
     }
@@ -347,23 +316,10 @@ public final class AuthService: Sendable {
     /// saved so recovery can be resumed after the hold period.
     public func startRecovery(serverUrl: String, email: String, password: String, recoveryCode: String) async throws -> PendingRecovery {
         await prepare(serverUrl: serverUrl)
-        let ecdhKey = try loadOrGenerateEcdhKey()   // the same device identity in every recovery step
-        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
-
-        let challenge = try await authApi.requestLoginChallenge(email: email, device: device)
-        let kdf = challenge.challenge.kdf
-        guard let nonce = Data(base64Encoded: challenge.challenge.nonce),
-              let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
-        let authKey = try await Self.offMainThread {
-            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
-                            iterations: kdf.iterations, parallelism: kdf.parallelism)
-        }
-        let proof = try ClientProof.compute(verifier: KeyDerivation.deriveVerifier(authKey: authKey), nonce: nonce,
-                                            loginSessionId: challenge.loginSessionId)
-
+        // The device key is the same in every recovery step: the server registers it as the replacement device.
+        let challenge = try await serverChallenge(email: email, password: password)
         let redeemed = try await recoveryApi.redeemRecoveryCode(
-            email: email, recoveryCode: recoveryCode,
-            verifierProof: ClientProofDto(loginSessionId: challenge.loginSessionId, clientProof: proof.base64EncodedString()))
+            email: email, recoveryCode: recoveryCode, verifierProof: try challenge.proof())
         let pending = PendingRecovery(
             sessionId: redeemed.recoverySessionId, serverUrl: serverUrl, email: email,
             releaseEarliestAt: redeemed.releaseEarliestAt, requiresPasskey: redeemed.requiresWebAuthn)
@@ -375,14 +331,9 @@ public final class AuthService: Sendable {
     /// registers this device as the replacement.
     public func recoveryMaterial(for pending: PendingRecovery) async throws -> RecoveryMaterialStatus {
         await prepare(serverUrl: pending.serverUrl)
-        let ecdhKey = try loadOrGenerateEcdhKey()
-        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
-        let material: RecoveryMaterialResponse
-        do {
-            material = try await recoveryApi.getRecoveryMaterial(sessionId: pending.sessionId, replacementDevice: device)
-        } catch ApiError.http(404, _) {
-            try await forgetPendingRecovery()
-            throw RecoveryError.sessionGone
+        let device = DeviceDto.ios(for: try loadOrGenerateEcdhKey())
+        let material = try await forgettingGoneSession {
+            try await recoveryApi.getRecoveryMaterial(sessionId: pending.sessionId, replacementDevice: device)
         }
         switch material.status {
         case "webauthn_required":
@@ -408,16 +359,9 @@ public final class AuthService: Sendable {
         pending: PendingRecovery, password: String, envelope: Envelope, replacementDeviceId: String, localVaultKey: Data
     ) async throws -> RecoveryResult {
         await prepare(serverUrl: pending.serverUrl)
-        let ecdhKey = try loadOrGenerateEcdhKey()   // the key getRecoveryMaterial registered
-        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
-
-        let challenge = try await authApi.requestLoginChallenge(email: pending.email, device: device)
-        let kdf = challenge.challenge.kdf
-        guard let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
-        let authKey = try await Self.offMainThread {
-            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
-                            iterations: kdf.iterations, parallelism: kdf.parallelism)
-        }
+        // The challenge's device key is the one getRecoveryMaterial registered.
+        let challenge = try await serverChallenge(email: pending.email, password: password)
+        let (ecdhKey, kdf, salt, authKey) = (challenge.ecdhKey, challenge.kdf, challenge.salt, challenge.authKey)
 
         let vaultKey: Data
         do {
@@ -429,25 +373,27 @@ public final class AuthService: Sendable {
         let (rotated, newCodes) = try await Self.makeRecovery(authKey: authKey, vaultKey: vaultKey)
         let deviceEnvelope = try Ecdh.packDeviceEnvelope(vaultKey: vaultKey, recipientPublicKey: ecdhKey.publicKey)
 
-        let response: RefreshResponse
-        do {
-            response = try await recoveryApi.completeRecovery(
+        let response = try await forgettingGoneSession {
+            try await recoveryApi.completeRecovery(
                 sessionId: pending.sessionId, replacementDeviceId: replacementDeviceId,
                 deviceEnvelope: deviceEnvelope, rotatedRecovery: rotated)
-        } catch ApiError.http(404, _) {
-            try await forgetPendingRecovery()
-            throw RecoveryError.sessionGone
         }
 
-        // The server has changed (codes rotated, session completed): from here on, keep what we have even
-        // if the response carries no tokens, because the new codes must still reach the user.
-        try await persistTokens(response.accessToken, response.refreshToken)
+        // The server has changed (codes rotated, session completed), so this recovery can't be resumed and the
+        // new codes exist only here. Keep what we have even if the response carries no tokens, and if the
+        // local setup fails, hand the codes over with the error.
+        try? await forgetPendingRecovery()
         let signedIn = response.accessToken != nil && response.refreshToken != nil
-        let localKey = try await Self.localAuthKey(kdf: kdf, serverAuthKey: authKey, password: password, salt: salt)
-        try await adopt(vaultKey: vaultKey, replacing: localVaultKey, salt: salt, authKey: localKey,
-                        session: (pending.serverUrl, response.userId ?? replacementDeviceId, replacementDeviceId, pending.email),
-                        connected: signedIn)
-        try await forgetPendingRecovery()
+        do {
+            try await persistTokens(response.accessToken, response.refreshToken)
+            let localKey = try await Self.localAuthKey(kdf: kdf, serverAuthKey: authKey, password: password, salt: salt)
+            try await adopt(vaultKey: vaultKey, replacing: localVaultKey, salt: salt, authKey: localKey,
+                            session: (pending.serverUrl, response.userId ?? replacementDeviceId, replacementDeviceId, pending.email),
+                            connected: signedIn)
+        } catch {
+            await discardSession()
+            throw AccountSetupIncomplete(recoveryCodes: newCodes, detail: error.localizedDescription)
+        }
         return RecoveryResult(vaultKey: vaultKey, recoveryCodes: newCodes, signedIn: signedIn)
     }
 
@@ -473,8 +419,26 @@ public final class AuthService: Sendable {
         await client.setBaseURL(serverUrl)
         let secrets = secrets
         await client.setOnTokensRefreshed { access, refresh in
-            try? secrets.setAll([.accessToken: access, .refreshToken: refresh])
+            // The server has already replaced the old refresh token. If the new pair can't be stored, a stored
+            // old pair would be a revoked one at the next launch, so drop both: the next launch then asks
+            // for a sign-in instead of trying a token that can never work.
+            for attempt in 1...2 {
+                do { return try secrets.setAll([.accessToken: access, .refreshToken: refresh]) }
+                catch where attempt == 2 {
+                    try? secrets.remove(.accessToken)
+                    try? secrets.remove(.refreshToken)
+                } catch {}
+            }
         }
+    }
+
+    /// Drops a session the server just granted but this device couldn't finish setting up, so no live tokens
+    /// are left behind. Best effort on the server side; the settings are not touched.
+    private func discardSession() async {
+        await authApi.logout()   // revokes the refresh token; reads it before it is cleared
+        await client.clearTokens()
+        try? secrets.remove(.accessToken)
+        try? secrets.remove(.refreshToken)
     }
 
     private func persistTokens(_ access: String?, _ refresh: String?) async throws {
@@ -500,18 +464,93 @@ public final class AuthService: Sendable {
         session: (serverUrl: String, userId: String, deviceId: String, email: String),
         connected: Bool = true
     ) async throws {
-        let verifier = KeyDerivation.deriveVerifier(authKey: authKey)
         let wrapped = try AesGcm.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: authKey), plaintext: vaultKey)
-        try await repository.replaceVaultKey(from: localVaultKey, to: vaultKey, settings: [
-            SettingsKeys.kdfSalt: salt.base64EncodedString(),
-            SettingsKeys.passwordVerifier: verifier.base64EncodedString(),
-            SettingsKeys.encryptedVaultKey: wrapped.base64EncodedString(),
-            SettingsKeys.serverUrl: session.serverUrl, SettingsKeys.userId: session.userId,
-            SettingsKeys.deviceId: session.deviceId, SettingsKeys.email: session.email,
-            SettingsKeys.mode: connected ? SettingsKeys.modeConnected : SettingsKeys.modeStandalone,
-        ])
+        var settings = Self.passwordSettings(salt: salt, verifier: KeyDerivation.deriveVerifier(authKey: authKey), wrapped: wrapped)
+        settings[SettingsKeys.serverUrl] = session.serverUrl
+        settings[SettingsKeys.userId] = session.userId
+        settings[SettingsKeys.deviceId] = session.deviceId
+        settings[SettingsKeys.email] = session.email
+        settings[SettingsKeys.mode] = connected ? SettingsKeys.modeConnected : SettingsKeys.modeStandalone
+        try await repository.replaceVaultKey(from: localVaultKey, to: vaultKey, settings: settings)
         // A stale biometric copy would decrypt to the old key and break entry decryption.
         if vaultKey != localVaultKey { await invalidateBiometric() }
+    }
+
+    // MARK: Shared steps
+
+    /// A login challenge answered with the password: what login and every step-up flow (password change,
+    /// recovery codes, account recovery) need from it.
+    private struct ServerChallenge {
+        let ecdhKey: Ecdh.PrivateKey
+        let loginSessionId: String
+        let kdf: KdfConfig
+        let salt: Data
+        let nonce: String
+        /// The password under the server's KDF parameters.
+        let authKey: Data
+
+        /// HMAC proof of the password for this challenge (the nonce is decoded here, so flows that
+        /// only want the key never depend on it).
+        func proof() throws -> ClientProofDto {
+            guard let nonce = Data(base64Encoded: nonce) else { throw CryptoError.invalidEncoding }
+            let proof = try ClientProof.compute(
+                verifier: KeyDerivation.deriveVerifier(authKey: authKey), nonce: nonce, loginSessionId: loginSessionId)
+            return ClientProofDto(loginSessionId: loginSessionId, clientProof: proof.base64EncodedString())
+        }
+    }
+
+    /// Requests a login challenge as this device and derives the password's key with the server's KDF
+    /// parameters (floors enforced, off the caller's executor).
+    private func serverChallenge(email: String, password: String) async throws -> ServerChallenge {
+        let ecdhKey = try loadOrGenerateEcdhKey()
+        let response = try await authApi.requestLoginChallenge(email: email, device: .ios(for: ecdhKey))
+        let kdf = response.challenge.kdf
+        guard let salt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
+        let authKey = try await Self.offMainThread {
+            try Argon2.hash(password: password, salt: salt, memoryMb: kdf.memoryMb,
+                            iterations: kdf.iterations, parallelism: kdf.parallelism)
+        }
+        return ServerChallenge(ecdhKey: ecdhKey, loginSessionId: response.loginSessionId, kdf: kdf, salt: salt,
+                               nonce: response.challenge.nonce, authKey: authKey)
+    }
+
+    /// A new password's credentials: its key (pinned KDF, fresh salt), the verifier the server stores, and
+    /// the envelope that wraps the vault key under it. Used by registration and password change.
+    private struct PasswordMaterial {
+        let salt: Data
+        let authKey: Data
+        let verifier: Data
+        let verifierDto: PasswordVerifierDto
+        let envelope: Envelope
+    }
+
+    private static func newPasswordMaterial(password: String, vaultKey: Data) async throws -> PasswordMaterial {
+        let salt = KeyDerivation.generateSalt()
+        let authKey = try await offMainThread { try KeyDerivation.derivePasswordAuthKey(password: password, salt: salt) }
+        let verifier = KeyDerivation.deriveVerifier(authKey: authKey)
+        return PasswordMaterial(
+            salt: salt, authKey: authKey, verifier: verifier,
+            verifierDto: PasswordVerifierDto(verifier: verifier.base64EncodedString(),
+                                             kdf: .default(saltBase64: salt.base64EncodedString())),
+            envelope: try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: authKey), plaintext: vaultKey))
+    }
+
+    /// The settings that let offline unlock recreate the vault key from the password. `wrapped` is the raw
+    /// `nonce || ciphertext || tag`.
+    private static func passwordSettings(salt: Data, verifier: Data, wrapped: Data) -> [String: String] {
+        [SettingsKeys.kdfSalt: salt.base64EncodedString(),
+         SettingsKeys.passwordVerifier: verifier.base64EncodedString(),
+         SettingsKeys.encryptedVaultKey: wrapped.base64EncodedString()]
+    }
+
+    /// Runs a recovery-session call; if the server no longer knows the session, forget it locally too.
+    private func forgettingGoneSession<T>(_ call: () async throws -> T) async throws -> T {
+        do {
+            return try await call()
+        } catch ApiError.http(404, _) {
+            try await forgetPendingRecovery()
+            throw RecoveryError.sessionGone
+        }
     }
 
     // MARK: Device key
@@ -561,5 +600,12 @@ public final class AuthService: Sendable {
     /// Argon2 is deliberately expensive; keep it off the caller's executor.
     private static func offMainThread<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
         try await Task.detached(priority: .userInitiated, operation: work).value
+    }
+}
+
+extension DeviceDto {
+    /// This iOS device, identified by `key`'s public half.
+    static func ios(for key: Ecdh.PrivateKey) -> DeviceDto {
+        .ios(publicKeyBase64: Ecdh.exportPublicKey(key.publicKey).base64EncodedString())
     }
 }

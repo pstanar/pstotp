@@ -10,8 +10,9 @@ public struct EmptyResponse: Decodable, Sendable {
 ///
 /// - Adds `Authorization` on authenticated requests.
 /// - On 401: refreshes the tokens (concurrent callers share one refresh) and retries once.
-/// - Refresh rejected → `ApiError.sessionExpired` and the tokens are cleared; refresh that
-///   couldn't reach the server → `ApiError.network`, tokens kept so the user can retry.
+/// - Refresh refused (400 / 401 / 403) → `ApiError.sessionExpired` and the tokens are cleared; any other
+///   failure of the refresh (unreachable server, 5xx, 429) is passed on and the tokens are kept, so the
+///   user can retry.
 public actor ApiClient {
     /// Base URL without trailing slash, e.g. `https://totp.example.com/api`.
     public private(set) var baseURL: String
@@ -113,8 +114,9 @@ public actor ApiClient {
                 onTokensRefreshed?(access, refresh)
             }
         } catch let error as ApiError {
-            // Server unreachable: tokens may still be valid, keep the session.
-            if case .network = error { throw error }
+            // Only a refusal of the token ends the session. An unreachable server, a 5xx from the server or
+            // a proxy in front of it, or a 429 says nothing about the tokens: keep them and let the caller retry.
+            guard case .http(let status, _) = error, [400, 401, 403].contains(status) else { throw error }
             clearTokens()
             throw ApiError.sessionExpired
         }

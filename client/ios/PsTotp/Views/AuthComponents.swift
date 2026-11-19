@@ -33,8 +33,8 @@ struct AuthError: View {
 /// Full-width primary button that shows a spinner and `busyTitle` while `loading`.
 struct AuthSubmitButton: View {
     let title: String
-    let busyTitle: String
-    let loading: Bool
+    var busyTitle = ""
+    var loading = false
     let action: () -> Void
 
     var body: some View {

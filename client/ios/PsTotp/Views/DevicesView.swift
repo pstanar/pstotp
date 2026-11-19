@@ -6,20 +6,17 @@ import SwiftUI
 struct DevicesView: View {
     @Bindable var model: AppModel
 
-    @State private var groups = DeviceGroups(pending: [], approved: [], revoked: [])
-    @State private var currentDeviceId: String?
-    @State private var loading = true
-    @State private var loadError: String?
+    @State private var loaded = Loadable<AppModel.DevicesSnapshot>()
     @State private var actionError: String?
     @State private var working = false
     @State private var revoking: DeviceInfoDto?
 
     var body: some View {
         List {
-            if let loadError {
+            if let loadError = loaded.error {
                 Section { AuthError(message: loadError).accessibilityIdentifier("devices.error") }
                     .listRowBackground(Color.clear)
-            } else if loading && groups.isEmpty {
+            } else if loaded.isLoading && groups.isEmpty {
                 Section { HStack { Spacer(); ProgressView(); Spacer() } }
                     .listRowBackground(Color.clear)
             } else if groups.isEmpty {
@@ -97,16 +94,11 @@ struct DevicesView: View {
         }
     }
 
+    private var groups: DeviceGroups { loaded.value?.groups ?? DeviceGroups() }
+    private var currentDeviceId: String? { loaded.value?.currentDeviceId }
+
     private func load() async {
-        switch await model.loadDevices() {
-        case .success(let snapshot):
-            groups = snapshot.groups
-            currentDeviceId = snapshot.currentDeviceId
-            loadError = nil
-        case .failure(let failure):
-            loadError = failure.message
-        }
-        loading = false
+        loaded.apply(await model.loadDevices())
     }
 
     /// Runs a device action, then refreshes the list.

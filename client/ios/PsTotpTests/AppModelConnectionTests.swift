@@ -471,13 +471,13 @@ struct AppModelConnectionTests {
     }
 
     @Test func serverRefusalsAreShownAndAnExpiredSessionAsksToSignInAgain() async throws {
-        let (model, transport) = try await connectedModel(extra: [])
+        let (model, transport) = try await connectedModel(extra: [.init(status: 401)])   // the refresh is refused too
         let other = try JSONDecoder().decode(DeviceInfoDto.self, from: Data(deviceJSON("other", "approved").utf8))
         transport.deviceActionStatus = 403
         #expect(await model.revokeDevice(other) == "Revoke failed: Access denied (HTTP 403)")
         #expect(model.connection != .standalone)
 
-        transport.deviceActionStatus = 401   // refresh is then answered 500 by the exhausted script → session over
+        transport.deviceActionStatus = 401   // and the refresh is refused (scripted above): the session is over
         _ = await model.revokeDevice(other)
         if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
     }
@@ -506,8 +506,8 @@ struct AppModelConnectionTests {
     }
 
     @Test func anExpiredSessionWhileLoadingTheAuditLogAsksToSignInAgain() async throws {
-        let (model, transport) = try await connectedModel(extra: [])
-        transport.auditStatus = 401   // the refresh is then refused by the exhausted script
+        let (model, transport) = try await connectedModel(extra: [.init(status: 401)])
+        transport.auditStatus = 401   // and the scripted refresh is refused too
         _ = await model.loadAuditEvents()
         if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
     }
@@ -580,8 +580,16 @@ struct AppModelConnectionTests {
         #expect(model.connection != .standalone)
     }
 
+    @Test func aServerErrorDuringRefreshDoesNotEndTheSession() async throws {
+        let (model, transport) = try await connectedModel(extra: [.init(status: 503)])
+        transport.auditStatus = 401          // the token is rejected, then the refresh hits a 503
+        guard case .failure(let failure) = await model.loadAuditEvents() else { Issue.record("expected a failure"); return }
+        #expect(failure.message == "Service unavailable (HTTP 503)")
+        #expect(model.connection == .connected(serverUrl: "https://x.test/api", email: "a@b.c"))   // not "sign in again"
+    }
+
     @Test func anExpiredSessionWhileManagingPasskeysAsksToSignInAgain() async throws {
-        let (model, transport) = try await connectedModel(extra: [])
+        let (model, transport) = try await connectedModel(extra: [.init(status: 401)])
         transport.passkeyActionStatus = 401
         _ = await model.revokePasskey(id: "c1")
         if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }

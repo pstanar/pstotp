@@ -221,17 +221,22 @@ struct VaultRepositoryTests {
 
     // MARK: Standalone vs connected bookkeeping
 
-    @Test func standaloneModeNeverQueuesSync() async throws {
-        let e = try await repo.addEntry(vaultKey: key, plaintext: plain("A"))
+    @Test func standaloneChangesAreRememberedForTheNextConnect() async throws {
+        // Not connected: the flag still records "the server hasn't seen this", so a device that
+        // disconnects, edits and reconnects pushes those edits.
+        var e = try await repo.addEntry(vaultKey: key, plaintext: plain("A"))
+        #expect(try await rawRecord(e.id)?.pendingSync == true)
         try await repo.reorderEntries(orderedIds: [e.id])
-        #expect(try await rawRecord(e.id)?.pendingSync == false)
-        #expect(try await repo.isPendingReorder() == false)
+        #expect(try await repo.isPendingReorder())
 
-        var edited = e
-        edited.issuer = "B"
-        try await repo.updateEntry(vaultKey: key, entry: edited)
+        try await db.writer.write { try $0.execute(sql: "UPDATE vault_entries SET pendingSync = 0") }
+        e.issuer = "B"
+        try await repo.updateEntry(vaultKey: key, entry: e)
+        #expect(try await rawRecord(e.id)?.pendingSync == true)
+
+        try await db.writer.write { try $0.execute(sql: "UPDATE vault_entries SET pendingSync = 0") }
         try await repo.deleteEntry(id: e.id)
-        #expect(try await rawRecord(e.id)?.pendingSync == false)
+        #expect(try await rawRecord(e.id)?.pendingSync == true)
     }
 
     @Test func connectedModeQueuesSyncForEveryMutation() async throws {
@@ -300,7 +305,7 @@ struct VaultRepositoryTests {
         #expect(all.allSatisfy { $0.id == $0.id.lowercased() })
         let record = try #require(try await rawRecord(kept.id))
         #expect(record.updatedAt == 2_000 && record.createdAt == 1_000)
-        #expect(record.pendingSync == false)   // standalone
+        #expect(record.pendingSync == true)
     }
 
     @Test func importSkipsUpdatesForEntriesThatAreGone() async throws {

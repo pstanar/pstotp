@@ -16,10 +16,10 @@ struct AuditFormatTests {
     @Test func readsTheServersTimestamps() throws {
         // .NET writes up to 7 fractional digits; sometimes none.
         for iso in ["2026-11-19T10:30:00Z", "2026-11-19T10:30:00.1234567Z", "2026-11-19T10:30:00.5Z"] {
-            let date = try #require(AuditFormat.date(iso), "\(iso)")
+            let date = try #require(ServerTime.date(iso), "\(iso)")
             #expect(Int(date.timeIntervalSince1970) == 1_795_084_200)
         }
-        #expect(AuditFormat.date("yesterday") == nil)
+        #expect(ServerTime.date("yesterday") == nil)
     }
 
     @Test func showsTheTimeInTheGivenZone() {

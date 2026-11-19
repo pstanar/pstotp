@@ -44,7 +44,7 @@ struct RecoveryCodesView: View {
                 .accessibilityIdentifier("recovery.password")
             if let error { AuthError(message: error).accessibilityIdentifier("recovery.error") }
 
-            AuthSubmitButton(title: "Regenerate Codes", busyTitle: "", loading: false, action: regenerate)
+            AuthSubmitButton(title: "Regenerate Codes", action: regenerate)
                 .disabled(password.isEmpty)
                 .accessibilityIdentifier("recovery.regenerate")
             Button("Cancel") { dismiss() }
@@ -77,7 +77,7 @@ struct RecoveryCodesView: View {
             Text("These codes will not be shown again.")
                 .font(.footnote)
                 .foregroundStyle(Palette.error)
-            AuthSubmitButton(title: "I've Saved My Codes", busyTitle: "", loading: false) {
+            AuthSubmitButton(title: "I've Saved My Codes") {
                 codes = []
                 dismiss()
             }
