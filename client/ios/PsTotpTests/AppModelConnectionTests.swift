@@ -17,6 +17,10 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
     /// What GET /devices returns, and the status for device actions.
     var devicesBody = #"{"devices":[]}"#
     var deviceActionStatus = 200
+    /// What GET /security/audit-events returns, and its status.
+    var auditBody = #"{"events":[]}"#
+    var auditStatus = 200
+    private(set) var auditPaths: [String] = []
     /// "METHOD /path" for every /devices request.
     private(set) var deviceRequests: [String] = []
     private(set) var lastDeviceBody: Data?
@@ -34,6 +38,10 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
         let path = request.url?.path ?? ""
         let reply = lock.withLock { () -> Reply in
             paths.append(path)
+            if path == "/api/security/audit-events" {
+                auditPaths.append(request.url?.absoluteString ?? "")
+                return auditStatus == 200 ? Reply(body: auditBody) : Reply(status: auditStatus)
+            }
             if path.hasPrefix("/api/devices") && path != "/api/devices/self/envelope" {
                 deviceRequests.append("\(request.httpMethod ?? "") \(path.dropFirst("/api".count))")
                 lastDeviceBody = request.httpBody
@@ -459,6 +467,36 @@ struct AppModelConnectionTests {
 
         transport.deviceActionStatus = 401   // refresh is then answered 500 by the exhausted script → session over
         _ = await model.revokeDevice(other)
+        if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
+    }
+
+    // MARK: Audit log
+
+    @Test func theAuditLogIsLoadedNewestFirstAsTheServerSendsIt() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        transport.auditBody = """
+        {"events":[
+          {"id":"e2","eventType":"DeviceApproved","eventData":"{\\"deviceName\\":\\"iPhone\\"}","ipAddress":"203.0.113.9","createdAt":"2026-11-19T10:30:00.1234567Z","deviceId":"d1"},
+          {"id":"e1","eventType":"LoginSuccess","eventData":null,"ipAddress":null,"createdAt":"2026-11-19T09:00:00Z","deviceId":null}]}
+        """
+        guard case .success(let events) = await model.loadAuditEvents() else { Issue.record("load failed"); return }
+        #expect(events.map(\.id) == ["e2", "e1"])
+        #expect(events[0].ipAddress == "203.0.113.9" && events[1].ipAddress == nil)
+        #expect(transport.auditPaths == ["https://x.test/api/security/audit-events?limit=100"])
+    }
+
+    @Test func anAuditLogFailureIsShown() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        transport.auditStatus = 403
+        guard case .failure(let failure) = await model.loadAuditEvents() else { Issue.record("expected a failure"); return }
+        #expect(failure.message == "Access denied (HTTP 403)")
+        #expect(model.connection != .standalone)
+    }
+
+    @Test func anExpiredSessionWhileLoadingTheAuditLogAsksToSignInAgain() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        transport.auditStatus = 401   // the refresh is then refused by the exhausted script
+        _ = await model.loadAuditEvents()
         if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
     }
 }

@@ -89,6 +89,8 @@ struct SettingsView: View {
                     syncRows
                     NavigationLink("Devices") { DevicesView(model: model) }
                         .accessibilityIdentifier("settings.devices")
+                    NavigationLink("Audit Log") { AuditLogView(model: model) }
+                        .accessibilityIdentifier("settings.auditLog")
                     NavigationLink("Change Password") { ChangePasswordView(model: model) }
                         .accessibilityIdentifier("settings.changePassword")
                     Button("Disconnect", role: .destructive) { confirmingDisconnect = true }

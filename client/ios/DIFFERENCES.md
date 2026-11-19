@@ -71,5 +71,5 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 
 ## Not ported yet (pending, not differences)
 
-Password sign-in, registration, vault sync, the icon library's sync, Change Password and Devices are done. Still to do: passkey
-login, account recovery, and the connected-only Audit Log, Passkeys and Recovery Codes buttons in Settings.
+Password sign-in, registration, vault sync, the icon library's sync, Change Password, Devices and the Audit Log are done. Still to do: passkey
+login, account recovery, and the connected-only Passkeys and Recovery Codes buttons in Settings.

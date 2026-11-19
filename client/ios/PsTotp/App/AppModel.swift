@@ -62,6 +62,7 @@ final class AppModel {
     private let sync: SyncService?
     private let iconSync: IconLibrarySyncService?
     private let devicesApi: DevicesApi?
+    private let auditApi: AuditApi?
     /// The in-memory library came from (or was reconciled with) the server this session, so editing it
     /// can't overwrite the account's real library with a stale local copy.
     private var libraryHydrated = false
@@ -95,6 +96,7 @@ final class AppModel {
         self.sync = server.sync
         self.iconSync = server.iconSync
         self.devicesApi = server.devices
+        self.auditApi = server.audit
     }
 
     /// Authentication and sync, sharing one API client (so they share one set of tokens).
@@ -103,6 +105,7 @@ final class AppModel {
         let sync: SyncService?
         let iconSync: IconLibrarySyncService?
         let devices: DevicesApi?
+        let audit: AuditApi?
     }
 
     /// - Parameter db: Needed for sync; nil builds a session without it (tests of other features).
@@ -121,7 +124,8 @@ final class AppModel {
             auth: auth,
             sync: db.map { SyncService(db: $0, client: client, repository: repository) },
             iconSync: db.map { IconLibrarySyncService(library: IconLibraryRepository(db: $0), client: client) },
-            devices: DevicesApi(client: client))
+            devices: DevicesApi(client: client),
+            audit: AuditApi(client: client))
     }
 
     // MARK: Startup
@@ -423,6 +427,18 @@ final class AppModel {
             return nil
         } catch {
             return "Revoke failed: \(deviceFailure(error))"
+        }
+    }
+
+    // MARK: Audit log
+
+    /// The account's latest security events, newest first (the server orders them).
+    func loadAuditEvents(limit: Int = 100) async -> Result<[AuditEventDto], ConnectionFailure> {
+        guard let auditApi else { return .failure(.init(message: "Not connected")) }
+        do {
+            return .success(try await auditApi.fetchEvents(limit: limit).events)
+        } catch {
+            return .failure(.init(message: deviceFailure(error)))
         }
     }
 
