@@ -232,6 +232,21 @@ final class PsTotpUITests: XCTestCase {
         return element
     }
 
+    /// Scrolls a form back up until `id` is visible, with short drags that stop as soon as it is: extra
+    /// swipes at the top of a sheet dismiss it.
+    @discardableResult
+    private func revealUp(_ id: String) -> XCUIElement {
+        let element = app.buttons[id]
+        var drags = 0
+        while !(element.exists && element.isHittable) && drags < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            from.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
+            drags += 1
+        }
+        XCTAssertTrue(element.exists, "\(id) missing")
+        return element
+    }
+
     func testEditPicksAndClearsAnEmojiIcon() {
         createVault()
         addManual(issuer: "GitHub", account: "octocat", secret: "JBSWY3DPEHPK3PXP")
@@ -251,16 +266,13 @@ final class PsTotpUITests: XCTestCase {
         app.buttons["More options for GitHub"].tap()
         app.buttons["Edit"].tap()
         XCTAssertTrue(reveal("icon.emoji.🔑").isSelected)
-        app.swipeDown(); app.swipeDown(); app.swipeDown()
-        app.buttons["icon.clear"].tap()
+        revealUp("icon.clear").tap()
         XCTAssertFalse(reveal("icon.emoji.🔑").isSelected)
-        app.swipeDown(); app.swipeDown(); app.swipeDown()
         app.buttons["edit.save"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["card.GitHub"].waitForExistence(timeout: 5))
         app.buttons["More options for GitHub"].tap()
         app.buttons["Edit"].tap()
         XCTAssertFalse(reveal("icon.emoji.🔑").isSelected)
-        app.swipeDown(); app.swipeDown(); app.swipeDown()
         app.buttons["Cancel"].tap()
     }
 
@@ -272,8 +284,7 @@ final class PsTotpUITests: XCTestCase {
         let globe = reveal("icon.emoji.🌐")
         globe.tap()
         XCTAssertTrue(globe.isSelected)
-        app.swipeDown(); app.swipeDown(); app.swipeDown()
-        app.buttons["add.submit"].tap()
+        revealUp("add.submit").tap()
         XCTAssertTrue(app.descendants(matching: .any)["card.Acme"].waitForExistence(timeout: 5))
 
         app.buttons["More options for Acme"].tap()
