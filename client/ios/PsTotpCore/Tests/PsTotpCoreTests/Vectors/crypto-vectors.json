@@ -302,6 +302,35 @@
       "icon": "🏦"
     }
   },
+  "clientProof": {
+    "verifierHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+    "nonceHex": "909192939495969798999a9b9c9d9e9f",
+    "loginSessionId": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "guidBytesHex": "5bad8f0fcbd99f46a16570867728950e",
+    "proofHex": "0bb6fb9bd3006ddf8ba7037e954863f6611f1d78d70cde8e4a6d0481c44cd15d"
+  },
+  "ecdh": {
+    "recipientPrivateHex": "040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dd",
+    "recipientPublicHex": "04f67d7bf6bf927748d1718cab99551270a12a83cb0cdbb22417af8973753563b1e761ae2b5c36bf07260fa9624d8e89764d8cf2fe3add1aad5d280324b2e1a6fd",
+    "ephemeralPrivateHex": "666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f901080f161d242b323940",
+    "ephemeralPublicHex": "04a01fb3da639da4cb3f777096df9d497999150cc0896bd937afec18f86e4db8761667805097112498bdb3b644c227ca39034a55e70400ac66b3cfbe0d73d3384f",
+    "wrappingKeyHex": "cc469a35d7a188bef5acb66862716c31b9deacf0bf409f5a17eb9fc0676a0b9e",
+    "vaultKeyHex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
+    "envelope": {
+      "ciphertext": "BKAfs9pjnaTLP3dwlt+dSXmZFQzAiWvZN6/sGPhuTbh2FmeAUJcRJJi9s7ZEwifKOQNKVecEAKxms8++DXPTOE9pENCdW09vm6raeiML543Z7VLqI8C+457opiBG5Zt7QcbQXtCJSnziQFF9r2Jhcjg=",
+      "nonce": "cHFyc3R1dnd4eXp7",
+      "version": 1
+    }
+  },
+  "envelope": {
+    "keyHex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+    "plaintextHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+    "envelope": {
+      "ciphertext": "J7GnryHWSA1ZXI7AMNjHa11K/VS1U/6VXrSdsExsU0E21QHVI6HVzJ/sD2lpzPwU",
+      "nonce": "ICEiIyQlJicoKSor",
+      "version": 1
+    }
+  },
   "base32": [
     {
       "inputHex": "",

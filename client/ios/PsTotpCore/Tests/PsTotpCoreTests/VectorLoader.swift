@@ -50,6 +50,21 @@ struct Vectors: Decodable {
         let vaultKeyHex: String; let id: String; let payloadBase64: String; let plaintext: Entry
     }
 
+    struct ClientProofVector: Decodable {
+        let verifierHex: String; let nonceHex: String; let loginSessionId: String
+        let guidBytesHex: String; let proofHex: String
+    }
+    struct EnvelopeJSON: Decodable { let ciphertext: String; let nonce: String; let version: Int }
+    struct EcdhVector: Decodable {
+        let recipientPrivateHex: String; let recipientPublicHex: String
+        let ephemeralPrivateHex: String; let ephemeralPublicHex: String
+        let wrappingKeyHex: String; let vaultKeyHex: String; let envelope: EnvelopeJSON
+    }
+    struct EnvelopeVector: Decodable { let keyHex: String; let plaintextHex: String; let envelope: EnvelopeJSON }
+
+    let clientProof: ClientProofVector
+    let ecdh: EcdhVector
+    let envelope: EnvelopeVector
     let hkdf: [Hkdf]
     let hmacSha256: [Hmac]
     let sha256: [Sha]

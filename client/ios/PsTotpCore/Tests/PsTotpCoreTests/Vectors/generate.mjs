@@ -1,7 +1,7 @@
 // Generates crypto known-answer vectors for the Swift port from Node's built-in
 // crypto (same primitives the web client uses via Web Crypto / hash-wasm).
 // Usage: node generate.mjs > crypto-vectors.json
-import { createHmac, hkdfSync, argon2Sync, createHash, createCipheriv } from "node:crypto";
+import { createHmac, hkdfSync, argon2Sync, createHash, createCipheriv, createECDH } from "node:crypto";
 
 const hex = (b) => Buffer.from(b).toString("hex");
 const bytes = (n, f) => Buffer.from(Array.from({ length: n }, (_, i) => f(i)));
@@ -89,6 +89,45 @@ const veGcm = createCipheriv("aes-256-gcm", veKey, veNonce);
 veGcm.setAAD(Buffer.from(veId, "utf8"));
 const vePayload = Buffer.concat([veNonce, veGcm.update(JSON.stringify(vePlain), "utf8"), veGcm.final(), veGcm.getAuthTag()]);
 
+// --- Connected mode: client proof, ECDH device envelopes, password envelopes ---------------------
+// .NET mixed-endian GUID bytes (matches web guidToBytes / Android GuidBytes).
+const guidBytes = (g) => {
+  const r = Buffer.from(g.replaceAll("-", ""), "hex");
+  return Buffer.from([r[3], r[2], r[1], r[0], r[5], r[4], r[7], r[6], ...r.subarray(8, 16)]);
+};
+const proofVerifier = bytes(32, (i) => 0x40 + i);
+const proofNonce = bytes(16, (i) => 0x90 + i);
+const proofGuid = "0f8fad5b-d9cb-469f-a165-70867728950e";
+const clientProof = {
+  verifierHex: hex(proofVerifier), nonceHex: hex(proofNonce), loginSessionId: proofGuid,
+  guidBytesHex: hex(guidBytes(proofGuid)),
+  proofHex: hex(createHmac("sha256", proofVerifier).update(Buffer.concat([proofNonce, guidBytes(proofGuid)])).digest()),
+};
+
+const ecKey = (seed) => { const e = createECDH("prime256v1"); e.setPrivateKey(bytes(32, (i) => (seed + i * 7) % 255 + 1)); return e; };
+const recipient = ecKey(3), ephemeral = ecKey(101);
+const ecdhWrap = hkdf(ephemeral.computeSecret(recipient.getPublicKey()), "device-envelope-v1");
+const deviceVaultKey = bytes(32, (i) => 0xc0 + i);
+const deNonce = bytes(12, (i) => 0x70 + i);
+const deGcm = createCipheriv("aes-256-gcm", ecdhWrap, deNonce);
+const deCt = Buffer.concat([deGcm.update(deviceVaultKey), deGcm.final(), deGcm.getAuthTag()]);
+const ecdh = {
+  recipientPrivateHex: hex(recipient.getPrivateKey()), recipientPublicHex: hex(recipient.getPublicKey()),
+  ephemeralPrivateHex: hex(ephemeral.getPrivateKey()), ephemeralPublicHex: hex(ephemeral.getPublicKey()),
+  wrappingKeyHex: hex(ecdhWrap),
+  vaultKeyHex: hex(deviceVaultKey),
+  // Wire format: ephemeralPub(65) || ciphertext+tag, base64; nonce separate.
+  envelope: { ciphertext: Buffer.concat([ephemeral.getPublicKey(), deCt]).toString("base64"), nonce: deNonce.toString("base64"), version: 1 },
+};
+
+// Password-style envelope (Envelope DTO: base64(ciphertext+tag), base64(nonce)).
+const peKey = bytes(32, (i) => 0x10 + i), peNonce = bytes(12, (i) => 0x20 + i);
+const pePlain = bytes(32, (i) => 0xe0 + i);
+const peGcm = createCipheriv("aes-256-gcm", peKey, peNonce);
+const peCt = Buffer.concat([peGcm.update(pePlain), peGcm.final(), peGcm.getAuthTag()]);
+const envelope = { keyHex: hex(peKey), plaintextHex: hex(pePlain),
+  envelope: { ciphertext: peCt.toString("base64"), nonce: peNonce.toString("base64"), version: 1 } };
+
 const salt16 = bytes(16, (i) => i + 1);
 const out = {
   hkdf: [
@@ -158,6 +197,7 @@ const out = {
   vaultEntry: {
     vaultKeyHex: hex(veKey), id: veId, payloadBase64: vePayload.toString("base64"), plaintext: vePlain,
   },
+  clientProof, ecdh, envelope,
   base32: [
     "", "f", "fo", "foo", "foob", "fooba", "foobar",
   ].map((s) => ({ inputHex: hex(Buffer.from(s)), encoded: base32(Buffer.from(s)) })),
