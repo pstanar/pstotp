@@ -62,7 +62,9 @@ public final class AuthService: Sendable {
 
     // MARK: Login
 
-    public func login(serverUrl: String, email: String, password: String) async throws -> LoginResult {
+    /// - Parameter localVaultKey: The unlocked vault's current key. The server's key replaces it, and the
+    ///   local entries are re-encrypted with the new one in the same transaction.
+    public func login(serverUrl: String, email: String, password: String, localVaultKey: Data) async throws -> LoginResult {
         await prepare(serverUrl: serverUrl)
         let ecdhKey = try loadOrGenerateEcdhKey()
         let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
@@ -93,10 +95,10 @@ public final class AuthService: Sendable {
             return .error("No envelope available to decrypt vault key")
         }
 
-        try await persistSession(serverUrl: serverUrl, userId: result.userId, deviceId: result.device.deviceId, email: email)
         // Adopt the server's vault key locally so offline password/biometric unlocks unwrap to the key
         // synced entries are encrypted with (a device that had its own local vault gets a different one).
-        try await persistPasswordEnvelope(salt: salt, authKey: authKey, vaultKey: serverVaultKey)
+        try await adopt(vaultKey: serverVaultKey, replacing: localVaultKey, salt: salt, authKey: authKey,
+                        session: (serverUrl, result.userId, result.device.deviceId, email))
         await rebuildDeviceEnvelope(vaultKey: serverVaultKey, key: ecdhKey)
         return .approved(serverVaultKey: serverVaultKey)
     }
@@ -115,7 +117,7 @@ public final class AuthService: Sendable {
     /// Creates the account: vault key, password verifier + envelope, device envelope, recovery codes
     /// + envelope. The caller must show `recoveryCodes` to the user — they are not stored.
     public func register(
-        serverUrl: String, email: String, password: String, registrationSessionId: String?
+        serverUrl: String, email: String, password: String, registrationSessionId: String?, localVaultKey: Data
     ) async throws -> RegistrationResult {
         await prepare(serverUrl: serverUrl)
 
@@ -156,9 +158,15 @@ public final class AuthService: Sendable {
         // The device key goes first: without it the device envelope the server now holds is unusable.
         try persistEcdhKey(ecdhKey)
         try await persistTokens(result.accessToken, result.refreshToken)
-        try await persistSession(serverUrl: serverUrl, userId: result.userId, deviceId: result.deviceId, email: email)
-        try await persistPasswordEnvelope(salt: salt, authKey: authKey, vaultKey: vaultKey)
+        try await adopt(vaultKey: vaultKey, replacing: localVaultKey, salt: salt, authKey: authKey,
+                        session: (serverUrl, result.userId, result.deviceId, email))
         return RegistrationResult(vaultKey: vaultKey, recoveryCodes: recoveryCodes)
+    }
+
+    /// Removes every stored secret, device key included. For a fresh install: Keychain items survive
+    /// an uninstall, and they belong to a vault that no longer exists.
+    public func removeAllSecrets() throws {
+        for key in SecretKey.allCases { try secrets.remove(key) }
     }
 
     // MARK: Logout
@@ -199,17 +207,26 @@ public final class AuthService: Sendable {
         try await repository.updateSettings(set: values)
     }
 
-    /// Stores the local password material so later offline password unlocks return exactly `vaultKey`.
-    /// Clears biometric unless the vault key itself is unchanged.
-    private func persistPasswordEnvelope(salt: Data, authKey: Data, vaultKey: Data, clearBiometric: Bool = true) async throws {
+    /// Makes `vaultKey` the device's key and marks the session connected, atomically: the local
+    /// password envelope (so later offline password unlocks return exactly this key), the session
+    /// and the re-encryption of everything stored under `localVaultKey`. A biometric copy of the
+    /// old key is removed.
+    private func adopt(
+        vaultKey: Data, replacing localVaultKey: Data, salt: Data, authKey: Data,
+        session: (serverUrl: String, userId: String, deviceId: String, email: String)
+    ) async throws {
         let verifier = KeyDerivation.deriveVerifier(authKey: authKey)
         let wrapped = try AesGcm.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: authKey), plaintext: vaultKey)
-        try await repository.updateSettings(set: [
+        try await repository.replaceVaultKey(from: localVaultKey, to: vaultKey, settings: [
             SettingsKeys.kdfSalt: salt.base64EncodedString(),
             SettingsKeys.passwordVerifier: verifier.base64EncodedString(),
             SettingsKeys.encryptedVaultKey: wrapped.base64EncodedString(),
+            SettingsKeys.serverUrl: session.serverUrl, SettingsKeys.userId: session.userId,
+            SettingsKeys.deviceId: session.deviceId, SettingsKeys.email: session.email,
+            SettingsKeys.mode: SettingsKeys.modeConnected,
         ])
-        if clearBiometric { await invalidateBiometric() }
+        // A stale biometric copy would decrypt to the old key and break entry decryption.
+        if vaultKey != localVaultKey { await invalidateBiometric() }
     }
 
     // MARK: Device key

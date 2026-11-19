@@ -50,3 +50,24 @@ struct AuthSubmitButton: View {
         .padding(.top, 24)
     }
 }
+
+/// A single-line text field styled like `PasswordField`.
+struct AuthTextField: View {
+    let title: String
+    @Binding var text: String
+    var keyboard: UIKeyboardType = .default
+    var submitLabel: SubmitLabel = .next
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        TextField(title, text: $text)
+            .keyboardType(keyboard)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .submitLabel(submitLabel)
+            .onSubmit(onSubmit)
+            .padding(12)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.outline, lineWidth: 1))
+    }
+}

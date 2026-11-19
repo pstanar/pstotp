@@ -233,6 +233,49 @@ public final class VaultRepository: Sendable {
         }
     }
 
+    /// Switches the vault to `newKey` in one transaction: every live entry and the icon library are
+    /// re-encrypted from `oldKey` (and marked unsynced), and `settings` (the new password envelope,
+    /// session, …) are written. All or nothing, so the stored wrapper can never hold a key that
+    /// the entries aren't encrypted with.
+    ///
+    /// Connecting to a server replaces the local vault key with the account's. Entries made in
+    /// standalone mode are encrypted with the old key; left alone they would be unreadable.
+    ///
+    /// - Throws: ``VaultKeyMismatchError`` when `oldKey` doesn't decrypt the stored entries.
+    public func replaceVaultKey(from oldKey: Data, to newKey: Data, settings: [String: String]) async throws {
+        try await db.writer.write { db in
+            if oldKey != newKey {
+                var failures = 0, successes = 0
+                var rewritten = [VaultEntryRecord]()
+                let live = try VaultEntryQueries.live(db)
+                for var record in live {
+                    do {
+                        let entry = try Self.decryptEntry(vaultKey: oldKey, record: record)
+                        record.encryptedPayload = try Self.encryptPayload(vaultKey: newKey, id: record.id, plaintext: entry.plaintext)
+                        record.pendingSync = true
+                        rewritten.append(record)
+                        successes += 1
+                    } catch {
+                        failures += 1   // left untouched, as `decrypt` tolerates one such entry
+                    }
+                }
+                if isVaultKeyMismatch(failures: failures, successes: successes) {
+                    throw VaultKeyMismatchError(failed: failures, total: live.count)
+                }
+                for record in rewritten { try VaultEntryQueries.upsert(db, record) }
+
+                if let stored = try SettingsQueries.get(db, SettingsKeys.iconLibraryCiphertext), !stored.isEmpty,
+                   let payload = Data(base64Encoded: stored),
+                   let blob = try? IconLibraryCrypto.decrypt(vaultKey: oldKey, payload: payload) {
+                    let reencrypted = try IconLibraryCrypto.encrypt(vaultKey: newKey, blob: blob)
+                    try SettingsQueries.set(db, SettingsKeys.iconLibraryCiphertext, reencrypted.base64EncodedString())
+                    try SettingsQueries.set(db, SettingsKeys.iconLibraryDirty, "true")
+                }
+            }
+            for (key, value) in settings { try SettingsQueries.set(db, key, value) }
+        }
+    }
+
     // MARK: Encryption helpers
 
     /// Decrypt rows previously delivered by ``observeRecords()``. Failures follow the same

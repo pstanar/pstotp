@@ -57,9 +57,13 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 32 | Which code a tap copies near the end of the period | The card decides from its once-a-second `timeLeft` state, so it can be up to a second stale. | Decided from the clock at the moment of the tap (`AppModel.copyCode(of:)` → `LiveCode`). | Exact 3 s window. | internal | |
 | 33 | Icon picker feedback | Failures and "library full" are toasts; an unreadable uploaded image fails silently. | Shown inline under the URL field ("Could not fetch image", "Could not read that image", the library-full message): a toast would sit behind the sheet. | The Edit / Add forms are sheets, which cover the app's toast. | cosmetic | |
 | 34 | My icons tile actions | A small ⋮ button in each tile's corner opens Rename / Delete. | Long-press a tile for a context menu with Rename / Delete. | iOS convention; a 12 pt corner button is below the touch-target minimum. | cosmetic | |
+| 35 | Connecting a device that already has local accounts | The account's vault key replaces the local one; the local entries stay encrypted under the old key (unreadable, or pushed in a form other devices can't decrypt). | The local entries and My icons are re-encrypted with the account's key, and the new password envelope is written, in one transaction (`VaultRepository.replaceVaultKey`); nothing changes if the old key doesn't match. | Android appears to lose them (see docs/BUGS-TODO.md). | internal | |
+| 36 | Server address field | The full API URL is typed (`https://host/api`); anything is accepted. | `ServerURL.normalize`: scheme defaults to https, a bare host gets `/api`, anything else must be an http(s) address. | Friendlier input; a bad address is caught before any request. | cosmetic | |
+| 37 | Device ECDH key storage | Public and private key stored separately in `SecureStore`. | One Keychain item (private key, PKCS#8); the public key is derived. | Nothing to keep consistent. | internal | |
+| 38 | Registration: when the device key is saved | After tokens and session. | Before them. | A failure part-way can't leave a connected session whose device envelope can't be opened. | internal | |
 
 ## Not ported yet (pending, not differences)
 
-the icon library's server sync, connected mode (server sync, passkeys, devices,
-audit, recovery; Settings' "Connect to Server" and the connected-only Change Password, Devices, Audit Log, Passkeys,
+the icon library's server sync, connected mode: sync, passkey login, devices,
+audit, account recovery (password sign-in and registration are done; the connected-only Change Password, Devices, Audit Log, Passkeys,
 Recovery Codes buttons).

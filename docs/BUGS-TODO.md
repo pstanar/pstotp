@@ -60,6 +60,13 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   with `otpauth://`. Users exporting from Google Authenticator get a QR code, not a file. Enhancement, all clients.
 - [ ] **Card doesn't show the account name (UX)** — `TotpCard` shows only the issuer, so several accounts at one
   issuer are indistinguishable in the list. (iOS shows the account name as a caption.)
+- [ ] **Connecting a device with local accounts leaves them under the wrong key (Suspected, likely)** — `AuthService.login`
+  / `register` replace the local vault key with the account's (`persistPasswordEnvelope`) but never re-encrypt the
+  existing local entries or the icon library; `login`'s `localVaultKey` parameter is unused. `unlockWithKey` then
+  fails the mismatch check (more than one entry) and logs out, and `SyncService` assumes one key for every device
+  ("no re-encryption is needed"). Fix: re-encrypt entries + icon library from the old key to the new one in one
+  transaction when adopting the key. (iOS: `VaultRepository.replaceVaultKey`.) Confirm by registering on a device
+  that already holds two or more accounts.
 
 ### Web client
 

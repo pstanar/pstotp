@@ -426,6 +426,46 @@ final class PsTotpUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings.import"].waitForExistence(timeout: 5))
     }
 
+    func testConnectToServerFormValidatesAndReportsAnUnreachableServer() {
+        createVault()
+        app.buttons["vault.settings"].tap()
+        let connect = app.buttons["settings.connect"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 5))
+        connect.tap()
+
+        let submit = app.buttons["connect.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        XCTAssertFalse(submit.isEnabled)
+        XCTAssertFalse(app.buttons["connect.register"].isEnabled)
+
+        type("nonexistent.invalid", into: "connect.server")
+        type("me@example.com", into: "connect.email")
+        type("some password", into: "connect.password")
+        XCTAssertTrue(submit.isEnabled)
+        XCTAssertTrue(app.buttons["connect.register"].isEnabled)
+        submit.tap()
+
+        // No such host: the failure is explained, and the form is usable again.
+        XCTAssertTrue(app.descendants(matching: .any)["connect.error"].waitForExistence(timeout: 30))
+        XCTAssertTrue(submit.isEnabled)
+
+        // Still standalone after backing out.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["settings.connect"].waitForExistence(timeout: 5))
+    }
+
+    func testRegisterFlowStartsFromTheConnectScreenAndReportsAnUnreachableServer() {
+        createVault()
+        app.buttons["vault.settings"].tap()
+        app.buttons["settings.connect"].tap()
+        type("nonexistent.invalid", into: "connect.server")
+        app.buttons["connect.register"].tap()
+
+        type("me@example.com", into: "register.email")
+        app.buttons["register.continue"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["register.error"].waitForExistence(timeout: 30))
+    }
+
     func testUpcomingCodeIsPreviewedNearTheEndOfThePeriod() throws {
         createVault()
         app.buttons["vault.settings"].tap()

@@ -35,9 +35,18 @@ final class AppModel {
     /// Import preview option: add the imported entries' icons to My icons.
     var addIconsToLibrary = true
 
+    /// Whether this device is linked to a server account.
+    enum Connection: Equatable {
+        case standalone
+        case connected(serverUrl: String, email: String)
+    }
+
+    private(set) var connection: Connection = .standalone
+
     private let repository: VaultRepository
     private let iconLibrary: IconLibraryRepository
     private let biometrics: BiometricKeyStore
+    private let auth: AuthService
     private var vaultKey: Data?
     private var usage: [String: EntryUsageRecord] = [:]
     /// Usage as of the last (re)sort. Copying a code records usage but must not re-sort the list
@@ -50,13 +59,28 @@ final class AppModel {
     /// Original bytes of the icons resolved for the import being previewed, by normalised data URL.
     private var importIconSources: [String: Data] = [:]
 
+    /// - Parameter auth: Server authentication; defaults to one with no server reachable state and
+    ///   in-memory secrets (tests that don't exercise connected mode).
     init(
         repository: VaultRepository, iconLibrary: IconLibraryRepository,
-        biometrics: BiometricKeyStore = KeychainBiometricKeyStore()
+        biometrics: BiometricKeyStore = KeychainBiometricKeyStore(),
+        auth: AuthService? = nil
     ) {
         self.repository = repository
         self.iconLibrary = iconLibrary
         self.biometrics = biometrics
+        self.auth = auth ?? Self.makeAuth(repository: repository, biometrics: biometrics,
+                                          secrets: InMemorySecretStore(), transport: URLSessionTransport())
+    }
+
+    /// Wires `AuthService` so that replacing the vault key also removes the biometric copy of the old one.
+    static func makeAuth(
+        repository: VaultRepository, biometrics: BiometricKeyStore, secrets: SecretStore, transport: HTTPTransport
+    ) -> AuthService {
+        AuthService(repository: repository, client: ApiClient(baseURL: "", transport: transport), secrets: secrets) {
+            biometrics.removeKey()
+            try? await repository.setSetting(SettingsKeys.biometricEnabled, "false")
+        }
     }
 
     // MARK: Startup
@@ -78,10 +102,12 @@ final class AppModel {
                 biometricEnabled = try await repository.getSetting(SettingsKeys.biometricEnabled) == "true"
                     && biometrics.hasStoredKey()
             } else {
-                // Keychain items outlive an uninstall; a key left by an earlier install belongs to a
-                // vault that no longer exists.
+                // Keychain items outlive an uninstall; keys and tokens left by an earlier install belong
+                // to a vault that no longer exists.
                 biometrics.removeKey()
+                try? auth.removeAllSecrets()
             }
+            try await restoreConnection()
             phase = setUp ? .locked : .needsSetup
         } catch {
             errorMessage = "Could not open the vault: \(error.localizedDescription)"
@@ -177,6 +203,130 @@ final class AppModel {
         importIconSources = [:]
         errorMessage = nil
         if phase == .unlocked { phase = .locked }
+    }
+
+    // MARK: Server connection
+
+    enum ConnectOutcome: Equatable {
+        case connected
+        /// Signed in, but another approved device must approve this one first.
+        case pendingApproval
+        case failed(String)
+    }
+
+    enum RegistrationStart: Equatable {
+        /// `code` is only present on servers that show it instead of emailing it (development).
+        case started(sessionId: String, needsEmailCode: Bool, code: String?)
+        case failed(String)
+    }
+
+    private func restoreConnection() async throws {
+        try? await auth.restoreSession()
+        if try await auth.isConnected(), let url = try await auth.serverUrl() {
+            connection = .connected(serverUrl: url, email: try await repository.getSetting(SettingsKeys.email) ?? "")
+        } else {
+            connection = .standalone
+        }
+    }
+
+    /// Sign in to an existing account. The account's vault key replaces the local one and local
+    /// entries are re-encrypted with it, so the vault must be unlocked.
+    func connect(serverUrl: String, email: String, password: String) async -> ConnectOutcome {
+        guard let key = vaultKey else { return .failed("Vault is locked") }
+        guard let url = ServerURL.normalize(serverUrl) else { return .failed("Enter a valid server address") }
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            switch try await auth.login(serverUrl: url, email: email, password: password, localVaultKey: key) {
+            case .approved(let serverKey):
+                guard await adoptKey(serverKey) else { return .failed(errorMessage ?? "Connection failed") }
+                connection = .connected(serverUrl: url, email: email)
+                return .connected
+            case .pendingApproval:
+                return .pendingApproval
+            case .error(let message):
+                return .failed(message)
+            }
+        } catch {
+            return .failed(Self.connectionMessage(error))
+        }
+    }
+
+    func beginRegistration(serverUrl: String, email: String) async -> RegistrationStart {
+        guard let url = ServerURL.normalize(serverUrl) else { return .failed("Enter a valid server address") }
+        do {
+            let reply = try await auth.registerBegin(serverUrl: url, email: email.trimmingCharacters(in: .whitespacesAndNewlines))
+            return .started(sessionId: reply.registrationSessionId, needsEmailCode: reply.emailVerificationRequired,
+                            code: reply.verificationCode)
+        } catch {
+            return .failed(Self.connectionMessage(error))
+        }
+    }
+
+    /// - Returns: nil when verified, otherwise a message for the user.
+    func verifyEmail(sessionId: String, code: String) async -> String? {
+        do {
+            return try await auth.verifyEmail(registrationSessionId: sessionId,
+                                              code: code.trimmingCharacters(in: .whitespacesAndNewlines))
+                ? nil : "Invalid verification code"
+        } catch {
+            return Self.connectionMessage(error)
+        }
+    }
+
+    /// Create the account on the server. The new vault key is adopted at once (entries re-encrypted),
+    /// so edits made while the recovery codes are on screen use the right key.
+    /// - Returns: the recovery codes to show the user, or a message.
+    func register(serverUrl: String, email: String, password: String, sessionId: String?) async -> Result<[String], ConnectionFailure> {
+        guard let key = vaultKey else { return .failure(.init(message: "Vault is locked")) }
+        guard let url = ServerURL.normalize(serverUrl) else { return .failure(.init(message: "Enter a valid server address")) }
+        // Android's register screen only asks for 8 characters (the strong rules are for the local setup).
+        if password.count < 8 { return .failure(.init(message: "Password must be at least 8 characters")) }
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let result = try await auth.register(serverUrl: url, email: email, password: password,
+                                                 registrationSessionId: sessionId, localVaultKey: key)
+            guard await adoptKey(result.vaultKey) else { return .failure(.init(message: errorMessage ?? "Registration failed")) }
+            connection = .connected(serverUrl: url, email: email)
+            return .success(result.recoveryCodes)
+        } catch {
+            return .failure(.init(message: Self.connectionMessage(error)))
+        }
+    }
+
+    struct ConnectionFailure: Error, Equatable { let message: String }
+
+    func disconnect() async {
+        try? await auth.logout()
+        connection = .standalone
+    }
+
+    /// Switch the in-memory state to the account's vault key. Decrypts first, so a failure leaves the
+    /// session as it was; on failure the half-made server session is dropped (as Android does).
+    private func adoptKey(_ key: Data) async -> Bool {
+        do {
+            let decrypted = try await repository.getAllEntries(vaultKey: key)
+            let library = (try? await iconLibrary.load(vaultKey: key)) ?? []
+            vaultKey = key
+            entries = decrypted
+            libraryIcons = library
+            sortUsage = usage
+            biometricEnabled = biometricEnabled && biometrics.hasStoredKey()
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = "Vault unlock failed: \(error.localizedDescription)"
+            try? await auth.logout()
+            return false
+        }
+    }
+
+    private static func connectionMessage(_ error: Error) -> String {
+        switch error {
+        case let error as ApiError: return error.message
+        case CryptoError.kdfParameterBelowMinimum(let detail): return "The server's key-derivation settings are too weak: \(detail)"
+        case let mismatch as VaultKeyMismatchError: return "Couldn't re-encrypt your local accounts: \(mismatch)"
+        default: return error.localizedDescription
+        }
     }
 
     // MARK: Entries
@@ -573,6 +723,12 @@ extension AppModel {
             try mutableDir.setResourceValues(values)
             db = try AppDatabase.open(at: dir.appendingPathComponent("pstotp.db"))
         }
-        return AppModel(repository: VaultRepository(db: db), iconLibrary: IconLibraryRepository(db: db))
+        let repository = VaultRepository(db: db)
+        let biometrics = KeychainBiometricKeyStore()
+        // UI tests must never touch the real Keychain or network.
+        let inMemory = arguments.contains("-uitest-inmemory")
+        let secrets: SecretStore = inMemory ? InMemorySecretStore() : KeychainSecretStore()
+        let auth = makeAuth(repository: repository, biometrics: biometrics, secrets: secrets, transport: URLSessionTransport())
+        return AppModel(repository: repository, iconLibrary: IconLibraryRepository(db: db), biometrics: biometrics, auth: auth)
     }
 }

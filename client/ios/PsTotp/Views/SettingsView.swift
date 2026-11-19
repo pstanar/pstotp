@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var working = false
     @State private var biometricError: String?
     @State private var changingBiometrics = false
+    @State private var confirmingDisconnect = false
 
     var body: some View {
         Form {
@@ -73,10 +74,27 @@ struct SettingsView: View {
             .listRowBackground(Palette.surface)
             .disabled(working)
 
-            Section("Server Sync") {
-                Text("Connect to a PsTotp server for multi-device sync.")
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.onSurfaceVariant)
+            Section {
+                switch model.connection {
+                case .standalone:
+                    Text("Connect to a PsTotp server for multi-device sync.")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.onSurfaceVariant)
+                    NavigationLink("Connect to Server") { ConnectView(model: model) }
+                        .accessibilityIdentifier("settings.connect")
+                case .connected(let serverUrl, let email):
+                    LabeledContent("Server", value: ServerURL.displayHost(serverUrl))
+                        .accessibilityIdentifier("settings.server")
+                    if !email.isEmpty { LabeledContent("Account", value: email) }
+                    Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
+                        .accessibilityIdentifier("settings.disconnect")
+                }
+            } header: {
+                Text("Server Sync")
+            } footer: {
+                if case .connected = model.connection {
+                    Text("Accounts sync to the server in an upcoming update.")
+                }
             }
             .listRowBackground(Palette.surface)
 
@@ -94,6 +112,11 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if working { ImportProgressView(progress: model.importIconProgress) } }
+        .confirmationDialog("Disconnect from the server?", isPresented: $confirmingDisconnect, titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) { Task { await model.disconnect() } }
+        } message: {
+            Text("Your accounts stay on this device.")
+        }
         .sheet(isPresented: $showingExport) { ExportView(model: model) }
         .sheet(item: $importCandidates) { box in
             ImportPreviewView(model: model, candidates: box.candidates)

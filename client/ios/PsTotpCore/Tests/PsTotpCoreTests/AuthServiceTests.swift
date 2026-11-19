@@ -1,15 +1,22 @@
 import Foundation
+import GRDB
 import Testing
 @testable import PsTotpCore
 
 @Suite("AuthService")
 struct AuthServiceTests {
     let url = "https://x.test/api"
+    let db: AppDatabase
     let repo: VaultRepository
     let secrets = InMemorySecretStore()
     let biometricCleared = LockedBox(0)
 
-    init() throws { repo = VaultRepository(db: try AppDatabase.inMemory()) }
+    let localKey0 = KeyDerivation.generateVaultKey()
+
+    init() throws {
+        db = try AppDatabase.inMemory()
+        repo = VaultRepository(db: db)
+    }
 
     private func make(_ replies: [StubTransport.Reply]) -> (AuthService, StubTransport, ApiClient) {
         let stub = StubTransport(replies)
@@ -67,7 +74,7 @@ struct AuthServiceTests {
             .init(),   // updateSelfEnvelope
         ])
 
-        let result = try await service.login(serverUrl: url + "/", email: "a@b.c", password: password)
+        let result = try await service.login(serverUrl: url + "/", email: "a@b.c", password: password, localVaultKey: localKey0)
         #expect(result == .approved(serverVaultKey: serverKey))
 
         // The proof is exactly HMAC(verifier, nonce || guid) over the server's KDF.
@@ -103,7 +110,7 @@ struct AuthServiceTests {
         let serverKey = KeyDerivation.generateVaultKey()
         let (service, _, _) = make([challengeReply, .init(), .init()])
         // First login generates + stores the device key; build an envelope for it.
-        _ = try? await service.login(serverUrl: url, email: "a@b.c", password: "pw")   // fails (empty reply), key persisted
+        _ = try? await service.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: localKey0)   // fails (empty reply), key persisted
         let key = try storedDeviceKey()
         let deviceEnvelope = try Ecdh.packDeviceEnvelope(vaultKey: serverKey, recipientPublicKey: key.publicKey)
 
@@ -115,7 +122,7 @@ struct AuthServiceTests {
             """),
             .init(),
         ])
-        #expect(try await second.login(serverUrl: url, email: "a@b.c", password: "pw") == .approved(serverVaultKey: serverKey))
+        #expect(try await second.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: localKey0) == .approved(serverVaultKey: serverKey))
     }
 
     @Test func pendingDeviceKeepsTokensButIsNotConnected() async throws {
@@ -125,7 +132,7 @@ struct AuthServiceTests {
             {"userId":"u","accessToken":"AT","refreshToken":"RT","device":{"deviceId":"d9","status":"pending"},"approvalRequestId":"req1"}
             """),
         ])
-        let result = try await service.login(serverUrl: url, email: "a@b.c", password: "pw")
+        let result = try await service.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: localKey0)
         #expect(result == .pendingApproval(approvalRequestId: "req1"))
         #expect(try await repo.getSetting(SettingsKeys.mode) == nil)
         #expect(try await repo.getSetting(SettingsKeys.deviceId) == "d9")
@@ -143,7 +150,7 @@ struct AuthServiceTests {
              "envelopes":{"password":\(envelopeJSON(envelope))}}
             """),
         ])
-        let result = try await service.login(serverUrl: url, email: "a@b.c", password: "wrong")
+        let result = try await service.login(serverUrl: url, email: "a@b.c", password: "wrong", localVaultKey: localKey0)
         #expect(result == .error("No envelope available to decrypt vault key"))
         #expect(try await repo.getSetting(SettingsKeys.mode) == nil)
         #expect(try await repo.getSetting(SettingsKeys.passwordVerifier) == nil)
@@ -153,16 +160,88 @@ struct AuthServiceTests {
         let (service, stub, _) = make([.init(body: """
         {"loginSessionId":"\(guid)","challenge":{"nonce":"AAAA","kdf":{"algorithm":"argon2id","memoryMb":8,"iterations":1,"parallelism":1,"salt":"AAAA"}}}
         """)])
-        await #expect(throws: CryptoError.self) { _ = try await service.login(serverUrl: url, email: "a@b.c", password: "pw") }
+        await #expect(throws: CryptoError.self) { _ = try await service.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: localKey0) }
         #expect(stub.requests.count == 1)   // never reached /login/complete
     }
 
     @Test func apiErrorsPropagate() async throws {
         let (service, _, _) = make([.init(status: 401, body: #"{"detail":"Invalid credentials"}"#)])
         await #expect(throws: ApiError.http(status: 401, message: "Invalid credentials")) {
-            _ = try await service.login(serverUrl: url, email: "a@b.c", password: "pw")
+            _ = try await service.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: localKey0)
         }
         #expect(try await service.isConnected() == false)
+    }
+
+    // MARK: Adopting the account's vault key
+
+    private func addLocalEntries(_ count: Int) async throws {
+        for n in 0..<count {
+            try await repo.addEntry(vaultKey: localKey0,
+                                    plaintext: VaultEntryPlaintext(issuer: "Svc\(n)", accountName: "u\(n)", secret: "JBSWY3DPEHPK3PXP"))
+        }
+    }
+
+    @Test func connectingReencryptsLocalEntriesAndIconsWithTheServerKey() async throws {
+        try await addLocalEntries(3)
+        let library = IconLibraryRepository(db: db)
+        try await library.save(vaultKey: localKey0, icons: [LibraryIcon(id: "i", label: "L", data: "data:image/png;base64,AAAA", createdAt: "t")])
+        try await repo.setSetting(SettingsKeys.iconLibraryDirty, "false")
+
+        let serverKey = KeyDerivation.generateVaultKey()
+        let ak = try authKey("pw")
+        let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: ak), plaintext: serverKey)
+        let (service, _, _) = make([challengeReply, .init(body: """
+            {"userId":"u","accessToken":"AT","refreshToken":"RT","device":{"deviceId":"d","status":"approved"},"envelopes":{"password":\(envelopeJSON(envelope))}}
+            """), .init()])
+        #expect(try await service.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: localKey0) == .approved(serverVaultKey: serverKey))
+
+        let entries = try await repo.getAllEntries(vaultKey: serverKey)
+        #expect(entries.map(\.issuer) == ["Svc0", "Svc1", "Svc2"])
+        #expect(try await library.load(vaultKey: serverKey).map(\.id) == ["i"])
+        #expect(try await library.load(vaultKey: localKey0).isEmpty)
+        #expect(try await repo.getSetting(SettingsKeys.iconLibraryDirty) == "true")
+        let pending = try await db.writer.read { try VaultEntryRecord.fetchAll($0).map(\.pendingSync) }
+        #expect(pending == [true, true, true])
+        #expect(biometricCleared.get() == 1)
+    }
+
+    @Test func aWrongLocalKeyChangesNothing() async throws {
+        try await addLocalEntries(3)
+        let before = try await db.writer.read { try VaultEntryRecord.fetchAll($0).map(\.encryptedPayload) }
+        let serverKey = KeyDerivation.generateVaultKey()
+        let ak = try authKey("pw")
+        let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: ak), plaintext: serverKey)
+        let (service, _, _) = make([challengeReply, .init(body: """
+            {"userId":"u","accessToken":"AT","refreshToken":"RT","device":{"deviceId":"d","status":"approved"},"envelopes":{"password":\(envelopeJSON(envelope))}}
+            """)])
+        await #expect(throws: VaultKeyMismatchError.self) {
+            _ = try await service.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: KeyDerivation.generateVaultKey())
+        }
+        // Rolled back: not connected, no new password envelope, entries untouched.
+        #expect(try await repo.getSetting(SettingsKeys.mode) == nil)
+        #expect(try await repo.getSetting(SettingsKeys.passwordVerifier) == nil)
+        #expect(try await db.writer.read { try VaultEntryRecord.fetchAll($0).map(\.encryptedPayload) } == before)
+        #expect(try await repo.getAllEntries(vaultKey: localKey0).count == 3)
+        #expect(biometricCleared.get() == 0)
+    }
+
+    @Test func registeringReencryptsLocalEntriesToo() async throws {
+        try await addLocalEntries(2)
+        let (service, _, _) = make([.init(body: #"{"userId":"u1","deviceId":"d1","accessToken":"AT","refreshToken":"RT"}"#)])
+        let result = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil, localVaultKey: localKey0)
+        #expect(try await repo.getAllEntries(vaultKey: result.vaultKey).count == 2)
+    }
+
+    @Test func sameKeyLeavesEntriesAlone() async throws {
+        try await addLocalEntries(2)
+        let ak = try authKey("pw")
+        let envelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: ak), plaintext: localKey0)
+        let (service, _, _) = make([challengeReply, .init(body: """
+            {"userId":"u","accessToken":"AT","refreshToken":"RT","device":{"deviceId":"d","status":"approved"},"envelopes":{"password":\(envelopeJSON(envelope))}}
+            """), .init()])
+        _ = try await service.login(serverUrl: url, email: "a@b.c", password: "pw", localVaultKey: localKey0)
+        #expect(try await db.writer.read { try VaultEntryRecord.fetchAll($0).map(\.pendingSync) } == [false, false])
+        #expect(biometricCleared.get() == 0)   // the biometric copy is still the right key
     }
 
     // MARK: Registration
@@ -170,7 +249,7 @@ struct AuthServiceTests {
     @Test func registerBuildsConsistentCryptoMaterial() async throws {
         let password = "pässword 🔐"
         let (service, stub, client) = make([.init(body: #"{"userId":"u1","deviceId":"d1","accessToken":"AT","refreshToken":"RT"}"#)])
-        let result = try await service.register(serverUrl: url, email: "a@b.c", password: password, registrationSessionId: "sess")
+        let result = try await service.register(serverUrl: url, email: "a@b.c", password: password, registrationSessionId: "sess", localVaultKey: localKey0)
 
         let body = try json(stub.requests[0])
         #expect(stub.requests[0].url?.path == "/api/auth/register")
@@ -216,7 +295,7 @@ struct AuthServiceTests {
     @Test func registerFailureLeavesNoSession() async throws {
         let (service, _, _) = make([.init(status: 400, body: #"{"detail":"Email already registered"}"#)])
         await #expect(throws: ApiError.http(status: 400, message: "Email already registered")) {
-            _ = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil)
+            _ = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil, localVaultKey: localKey0)
         }
         #expect(try await repo.getSetting(SettingsKeys.mode) == nil)
         #expect(try await repo.getSetting(SettingsKeys.passwordVerifier) == nil)
@@ -248,7 +327,7 @@ struct AuthServiceTests {
 
     @Test func logoutClearsTheSessionButKeepsTheDeviceKeyAndEmail() async throws {
         let (service, _, client) = make([.init(body: #"{"userId":"u1","deviceId":"d1","accessToken":"AT","refreshToken":"RT"}"#), .init()])
-        _ = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil)
+        _ = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil, localVaultKey: localKey0)
         try await repo.setSetting(SettingsKeys.lastSyncAt, "t")
         try await service.logout()
 
@@ -267,7 +346,7 @@ struct AuthServiceTests {
     @Test func logoutWorksOffline() async throws {
         let (service, _, _) = make([.init(body: #"{"userId":"u1","deviceId":"d1","accessToken":"AT","refreshToken":"RT"}"#),
                                     .init(error: URLError(.notConnectedToInternet))])
-        _ = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil)
+        _ = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil, localVaultKey: localKey0)
         try await service.logout()
         #expect(try await service.isConnected() == false)
     }
@@ -293,5 +372,27 @@ struct AuthServiceTests {
         try await service.restoreSession()
         let hasTokens = await client.hasTokens
         #expect(!hasTokens)
+    }
+}
+
+@Suite("ServerURL")
+struct ServerURLTests {
+    @Test func normalizesWhatPeopleType() {
+        #expect(ServerURL.normalize("https://totp.example.com/api") == "https://totp.example.com/api")
+        #expect(ServerURL.normalize("  totp.example.com ") == "https://totp.example.com/api")
+        #expect(ServerURL.normalize("https://totp.example.com/") == "https://totp.example.com/api")
+        #expect(ServerURL.normalize("HTTPS://Totp.Example.com/api///") == "https://Totp.Example.com/api")
+        #expect(ServerURL.normalize("https://example.com/pstotp/api/") == "https://example.com/pstotp/api")   // sub-path mount
+        #expect(ServerURL.normalize("http://192.168.1.5:8080") == "http://192.168.1.5:8080/api")
+    }
+
+    @Test func rejectsWhatIsNotAnAddress() {
+        for bad in ["", "   ", "ftp://x.test/api", "https://", "https://user:pw@x.test/api", "https://x.test/api?x=1", "://x"] {
+            #expect(ServerURL.normalize(bad) == nil, "\(bad)")
+        }
+    }
+
+    @Test func displayHost() {
+        #expect(ServerURL.displayHost("https://totp.example.com:8443/api") == "totp.example.com")
     }
 }
