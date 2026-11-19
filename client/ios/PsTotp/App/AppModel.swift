@@ -338,6 +338,31 @@ final class AppModel {
 
     struct ConnectionFailure: Error, Equatable { let message: String }
 
+    /// Change the account password (and this device's copy of it). The vault key is unchanged.
+    /// - Returns: nil on success, otherwise a message for the user.
+    func changePassword(current: String, new: String, confirm: String) async -> String? {
+        // Android's rules for this screen: matching, and at least 8 characters.
+        if new != confirm { return "Passwords do not match" }
+        if new.count < 8 { return "Password must be at least 8 characters" }
+        guard case .connected(let url, let email) = connection, !email.isEmpty, let key = vaultKey else {
+            return "Not connected or vault locked"
+        }
+        do {
+            switch try await auth.changePassword(email: email, currentPassword: current, newPassword: new, vaultKey: key) {
+            case .success:
+                showToast("Password changed")
+                return nil
+            case .incorrectCurrentPassword:
+                return "Current password is incorrect"
+            }
+        } catch ApiError.sessionExpired {
+            connection = .expired(serverUrl: url, email: email)
+            return "Session expired — sign in again, then change the password"
+        } catch {
+            return Self.connectionMessage(error)
+        }
+    }
+
     func disconnect() async {
         try? await auth.logout()
         connection = .standalone

@@ -87,6 +87,8 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.server")
                     if !email.isEmpty { LabeledContent("Account", value: email) }
                     syncRows
+                    NavigationLink("Change Password") { ChangePasswordView(model: model) }
+                        .accessibilityIdentifier("settings.changePassword")
                     Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
                         .accessibilityIdentifier("settings.disconnect")
                 case .expired(let serverUrl, let email):

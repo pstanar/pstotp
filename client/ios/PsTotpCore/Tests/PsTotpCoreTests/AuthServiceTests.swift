@@ -271,6 +271,84 @@ struct AuthServiceTests {
         #expect(biometricCleared.get() == 0)   // the biometric copy is still the right key
     }
 
+    // MARK: Change password
+
+    /// A connected device: local vault under `old`, tokens in place.
+    private func connectedService(_ replies: [StubTransport.Reply]) async throws -> (AuthService, StubTransport, ApiClient, Data) {
+        let vaultKey = try await repo.setupPassword("OldPassw0rd!")
+        try await repo.setSetting(SettingsKeys.mode, SettingsKeys.modeConnected)
+        try await repo.setSetting(SettingsKeys.serverUrl, url)
+        try secrets.setAll([.accessToken: "AT", .refreshToken: "RT"])
+        let (service, stub, client) = make(replies)
+        try await service.restoreSession()
+        return (service, stub, client, vaultKey)
+    }
+
+    private let changeOK = StubTransport.Reply(body: #"{"accessToken":"AT2","refreshToken":"RT2"}"#)
+
+    @Test func changingThePasswordRewrapsTheSameVaultKeyEverywhere() async throws {
+        let (service, stub, client, vaultKey) = try await connectedService([challengeReply, changeOK])
+        let ak = try authKey("OldPassw0rd!")   // the server's KDF (32 MiB) for the proof
+
+        #expect(try await service.changePassword(email: "a@b.c", currentPassword: "OldPassw0rd!", newPassword: "NewPassw0rd!", vaultKey: vaultKey) == .success)
+
+        // Request: proof of the CURRENT password, then the new verifier and envelope.
+        #expect(stub.requests[1].url?.path == "/api/account/password/change")
+        let body = try json(stub.requests[1])
+        let proof = try #require(body["currentProof"] as? [String: Any])
+        let expected = try ClientProof.compute(verifier: KeyDerivation.deriveVerifier(authKey: ak), nonce: nonce, loginSessionId: guid)
+        #expect(proof["clientProof"] as? String == expected.base64EncodedString() && proof["loginSessionId"] as? String == guid)
+
+        let verifier = try #require(body["newVerifier"] as? [String: Any])
+        let kdf = try #require(verifier["kdf"] as? [String: Any])
+        #expect(kdf["memoryMb"] as? Int == 64 && kdf["iterations"] as? Int == 3 && kdf["parallelism"] as? Int == 4)
+        let saltB64 = try #require(kdf["salt"] as? String)
+        let newSalt = try #require(Data(base64Encoded: saltB64))
+        let newAK = try KeyDerivation.derivePasswordAuthKey(password: "NewPassw0rd!", salt: newSalt)
+        #expect(verifier["verifier"] as? String == KeyDerivation.deriveVerifier(authKey: newAK).base64EncodedString())
+        let env = try #require(body["newPasswordEnvelope"] as? [String: Any])
+        let sent = Envelope(ciphertext: try #require(env["ciphertext"] as? String), nonce: try #require(env["nonce"] as? String))
+        #expect(try EnvelopeHelper.decrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: newAK), envelope: sent) == vaultKey)
+
+        // Device: the new password opens the same vault key; the old one no longer does.
+        #expect(try await repo.unlockVault(password: "NewPassw0rd!") == vaultKey)
+        #expect(try await repo.unlockVault(password: "OldPassw0rd!") == nil)
+        // Session: the server's new tokens replace the revoked ones.
+        #expect(try secrets.get(.accessToken) == "AT2" && secrets.get(.refreshToken) == "RT2")
+        let token = await client.accessToken
+        #expect(token == "AT2")
+        // The vault key didn't change, so a biometric copy stays valid.
+        #expect(biometricCleared.get() == 0)
+    }
+
+    @Test func aWrongCurrentPasswordChangesNothing() async throws {
+        // The server answers 401 to the bad proof; the client refreshes its tokens once and retries
+        // before concluding the proof is wrong.
+        let (service, _, _, vaultKey) = try await connectedService([
+            challengeReply, .init(status: 401), .init(body: #"{"accessToken":"AT2","refreshToken":"RT2"}"#), .init(status: 401)])
+        #expect(try await service.changePassword(email: "a@b.c", currentPassword: "wrong", newPassword: "NewPassw0rd!", vaultKey: vaultKey)
+                == .incorrectCurrentPassword)
+        #expect(try await repo.unlockVault(password: "OldPassw0rd!") == vaultKey)   // local vault untouched
+        #expect(try await repo.unlockVault(password: "NewPassw0rd!") == nil)
+        #expect(try await service.isConnected())
+    }
+
+    @Test func anExpiredSessionIsReportedAsSuch() async throws {
+        let (service, _, _, vaultKey) = try await connectedService([challengeReply, .init(status: 401), .init(status: 401)])
+        await #expect(throws: ApiError.sessionExpired) {
+            _ = try await service.changePassword(email: "a@b.c", currentPassword: "OldPassw0rd!", newPassword: "NewPassw0rd!", vaultKey: vaultKey)
+        }
+        #expect(try await repo.unlockVault(password: "OldPassw0rd!") == vaultKey)
+    }
+
+    @Test func serverErrorsPropagateAndLeaveTheOldPasswordInForce() async throws {
+        let (service, _, _, vaultKey) = try await connectedService([challengeReply, .init(status: 500)])
+        await #expect(throws: ApiError.http(status: 500, message: "Server error (HTTP 500)")) {
+            _ = try await service.changePassword(email: "a@b.c", currentPassword: "OldPassw0rd!", newPassword: "NewPassw0rd!", vaultKey: vaultKey)
+        }
+        #expect(try await repo.unlockVault(password: "OldPassw0rd!") == vaultKey)
+    }
+
     // MARK: Registration
 
     @Test func registerBuildsConsistentCryptoMaterial() async throws {

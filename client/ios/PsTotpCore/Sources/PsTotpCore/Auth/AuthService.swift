@@ -6,6 +6,12 @@ public enum LoginResult: Sendable, Equatable {
     case error(String)
 }
 
+public enum ChangePasswordResult: Sendable, Equatable {
+    case success
+    /// The server rejected the proof of the current password.
+    case incorrectCurrentPassword
+}
+
 public struct RegistrationResult: Sendable, Equatable {
     public let vaultKey: Data
     public let recoveryCodes: [String]
@@ -174,6 +180,65 @@ public final class AuthService: Sendable {
     /// an uninstall, and they belong to a vault that no longer exists.
     public func removeAllSecrets() throws {
         for key in SecretKey.allCases { try secrets.remove(key) }
+    }
+
+    // MARK: Change password
+
+    /// Changes the password on the server and on this device. The vault key stays the same; only the
+    /// password-derived wrapper of it is replaced (so a biometric copy remains valid).
+    ///
+    /// Step-up: a fresh login challenge proves knowledge of the current password. On success the
+    /// server revokes every session and hands this device new tokens, so other devices have to sign
+    /// in again.
+    ///
+    /// - Parameter vaultKey: The unlocked vault's key, to wrap under the new password.
+    public func changePassword(
+        email: String, currentPassword: String, newPassword: String, vaultKey: Data
+    ) async throws -> ChangePasswordResult {
+        let ecdhKey = try loadOrGenerateEcdhKey()
+        let device = DeviceDto.ios(publicKeyBase64: Ecdh.exportPublicKey(ecdhKey.publicKey).base64EncodedString())
+
+        let challenge = try await authApi.requestLoginChallenge(email: email, device: device)
+        let kdf = challenge.challenge.kdf
+        guard let nonce = Data(base64Encoded: challenge.challenge.nonce),
+              let currentSalt = Data(base64Encoded: kdf.salt) else { throw CryptoError.invalidEncoding }
+
+        let newSalt = KeyDerivation.generateSalt()
+        let (currentAuthKey, newAuthKey) = try await Self.offMainThread {
+            (try Argon2.hash(password: currentPassword, salt: currentSalt, memoryMb: kdf.memoryMb,
+                             iterations: kdf.iterations, parallelism: kdf.parallelism),
+             try KeyDerivation.derivePasswordAuthKey(password: newPassword, salt: newSalt))
+        }
+        let proof = try ClientProof.compute(
+            verifier: KeyDerivation.deriveVerifier(authKey: currentAuthKey), nonce: nonce,
+            loginSessionId: challenge.loginSessionId)
+
+        let newVerifier = KeyDerivation.deriveVerifier(authKey: newAuthKey)
+        let newEnvelope = try EnvelopeHelper.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: newAuthKey), plaintext: vaultKey)
+
+        let response: RefreshResponse
+        do {
+            response = try await authApi.changePassword(
+                currentProof: ClientProofDto(loginSessionId: challenge.loginSessionId, clientProof: proof.base64EncodedString()),
+                newVerifier: PasswordVerifierDto(verifier: newVerifier.base64EncodedString(),
+                                                 kdf: .default(saltBase64: newSalt.base64EncodedString())),
+                newPasswordEnvelope: newEnvelope)
+        } catch ApiError.http(401, _) {
+            // The session is fresh and the token was just refreshed if needed, so a 401 here means the
+            // proof was wrong. (The server leaves the login session unused in that case.)
+            return .incorrectCurrentPassword
+        }
+
+        // The local password material first: the server has already changed, so offline unlock has to
+        // match it before anything else can fail. (The vault key is unchanged: no biometric reset.)
+        let wrapped = try AesGcm.encrypt(key: KeyDerivation.deriveEnvelopeKey(authKey: newAuthKey), plaintext: vaultKey)
+        try await repository.updateSettings(set: [
+            SettingsKeys.kdfSalt: newSalt.base64EncodedString(),
+            SettingsKeys.passwordVerifier: newVerifier.base64EncodedString(),
+            SettingsKeys.encryptedVaultKey: wrapped.base64EncodedString(),
+        ])
+        try await persistTokens(response.accessToken, response.refreshToken)
+        return .success
     }
 
     // MARK: Logout

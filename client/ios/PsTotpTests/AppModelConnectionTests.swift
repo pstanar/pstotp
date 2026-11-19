@@ -321,4 +321,59 @@ struct AppModelConnectionTests {
         await model.waitForPendingSync()
         #expect(transport.paths.isEmpty)
     }
+
+    // MARK: Change password
+
+    private func connectedModel(password: String = "pw", extra: [ScriptedTransport.Reply]) async throws -> (AppModel, ScriptedTransport) {
+        let replies = try loginReplies(password: password, serverKey: KeyDerivation.generateVaultKey())
+        let (model, transport) = await unlockedModel(replies + extra)
+        _ = await model.connect(serverUrl: "x.test", email: "a@b.c", password: password)
+        await model.waitForPendingSync()
+        return (model, transport)
+    }
+
+    @Test func changingThePasswordSucceedsAndTheNewOneUnlocksTheVault() async throws {
+        let challenge = try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey())[0]
+        let (model, transport) = try await connectedModel(extra: [challenge, .init(body: #"{"accessToken":"AT2","refreshToken":"RT2"}"#)])
+
+        #expect(await model.changePassword(current: "pw", new: "NewPassw0rd!", confirm: "NewPassw0rd!") == nil)
+        #expect(model.toast == "Password changed")
+        #expect(transport.authPaths.last == "/api/account/password/change")
+        #expect(model.connection != .standalone)
+
+        let relaunch = await restarted()
+        #expect(await relaunch.unlock(password: "NewPassw0rd!"))
+        #expect(relaunch.entries.count == 2)
+        let old = await restarted()
+        #expect(await old.unlock(password: "pw") == false)
+    }
+
+    @Test func aWrongCurrentPasswordIsExplained() async throws {
+        let challenge = try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey())[0]
+        let (model, _) = try await connectedModel(extra: [challenge, .init(status: 401), .init(body: #"{"accessToken":"A","refreshToken":"R"}"#), .init(status: 401)])
+        #expect(await model.changePassword(current: "nope", new: "NewPassw0rd!", confirm: "NewPassw0rd!") == "Current password is incorrect")
+        #expect(model.toast == nil)
+    }
+
+    @Test func changePasswordChecksTheFormBeforeTheNetwork() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        let before = transport.paths.count
+        #expect(await model.changePassword(current: "pw", new: "NewPassw0rd!", confirm: "different") == "Passwords do not match")
+        #expect(await model.changePassword(current: "pw", new: "short", confirm: "short") == "Password must be at least 8 characters")
+        #expect(transport.paths.count == before)
+    }
+
+    @Test func changePasswordNeedsAConnection() async {
+        let (model, transport) = await unlockedModel([])
+        #expect(await model.changePassword(current: "pw", new: "NewPassw0rd!", confirm: "NewPassw0rd!") == "Not connected or vault locked")
+        #expect(transport.paths.isEmpty)
+    }
+
+    @Test func anExpiredSessionDuringAPasswordChangeAsksToSignInAgain() async throws {
+        let challenge = try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey())[0]
+        let (model, _) = try await connectedModel(extra: [challenge, .init(status: 401), .init(status: 401)])
+        let message = await model.changePassword(current: "pw", new: "NewPassw0rd!", confirm: "NewPassw0rd!")
+        #expect(message == "Session expired — sign in again, then change the password")
+        #expect(model.connection == .expired(serverUrl: "https://x.test/api", email: "a@b.c"))
+    }
 }
