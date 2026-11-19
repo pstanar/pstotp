@@ -224,6 +224,15 @@ public final class VaultRepository: Sendable {
         try await db.writer.write { try SettingsQueries.delete($0, key) }
     }
 
+    /// Writes and deletes several settings in one transaction, so a crash can't leave a half-updated
+    /// session (e.g. a new verifier with the old wrapped key).
+    public func updateSettings(set values: [String: String] = [:], delete keys: [String] = []) async throws {
+        try await db.writer.write { db in
+            for (key, value) in values { try SettingsQueries.set(db, key, value) }
+            for key in keys { try SettingsQueries.delete(db, key) }
+        }
+    }
+
     // MARK: Encryption helpers
 
     /// Decrypt rows previously delivered by ``observeRecords()``. Failures follow the same
