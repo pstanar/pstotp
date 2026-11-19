@@ -61,6 +61,7 @@ final class AppModel {
     private let auth: AuthService
     private let sync: SyncService?
     private let iconSync: IconLibrarySyncService?
+    private let devicesApi: DevicesApi?
     /// The in-memory library came from (or was reconciled with) the server this session, so editing it
     /// can't overwrite the account's real library with a stale local copy.
     private var libraryHydrated = false
@@ -93,6 +94,7 @@ final class AppModel {
         self.auth = server.auth
         self.sync = server.sync
         self.iconSync = server.iconSync
+        self.devicesApi = server.devices
     }
 
     /// Authentication and sync, sharing one API client (so they share one set of tokens).
@@ -100,6 +102,7 @@ final class AppModel {
         let auth: AuthService
         let sync: SyncService?
         let iconSync: IconLibrarySyncService?
+        let devices: DevicesApi?
     }
 
     /// - Parameter db: Needed for sync; nil builds a session without it (tests of other features).
@@ -117,7 +120,8 @@ final class AppModel {
         return ServerSession(
             auth: auth,
             sync: db.map { SyncService(db: $0, client: client, repository: repository) },
-            iconSync: db.map { IconLibrarySyncService(library: IconLibraryRepository(db: $0), client: client) })
+            iconSync: db.map { IconLibrarySyncService(library: IconLibraryRepository(db: $0), client: client) },
+            devices: DevicesApi(client: client))
     }
 
     // MARK: Startup
@@ -361,6 +365,73 @@ final class AppModel {
         } catch {
             return Self.connectionMessage(error)
         }
+    }
+
+    // MARK: Devices
+
+    struct DevicesSnapshot: Equatable {
+        var groups: DeviceGroups
+        /// This device's id on the server, to mark it and keep it from being revoked from here.
+        var currentDeviceId: String?
+    }
+
+    func loadDevices() async -> Result<DevicesSnapshot, ConnectionFailure> {
+        guard let devicesApi else { return .failure(.init(message: "Not connected")) }
+        do {
+            let list = try await devicesApi.fetchDevices().devices
+            let current = try await repository.getSetting(SettingsKeys.deviceId)
+            return .success(DevicesSnapshot(groups: DeviceListing.group(list), currentDeviceId: current))
+        } catch {
+            return .failure(.init(message: deviceFailure(error)))
+        }
+    }
+
+    /// Let a pending device in by handing it the vault key, wrapped for its public key.
+    /// - Returns: nil on success, otherwise a message for the user.
+    func approveDevice(_ device: DeviceInfoDto) async -> String? {
+        guard let devicesApi else { return "Not connected" }
+        guard let key = vaultKey else { return "Vault is locked" }
+        do {
+            let envelope = try DeviceApproval.envelope(for: device, vaultKey: key)
+            try await devicesApi.approveDevice(
+                deviceId: device.deviceId, approvalRequestId: DeviceApproval.approvalRequestId(for: device),
+                deviceEnvelope: envelope)
+            return nil
+        } catch {
+            return "Approve failed: \(deviceFailure(error))"
+        }
+    }
+
+    func rejectDevice(_ device: DeviceInfoDto) async -> String? {
+        guard let devicesApi else { return "Not connected" }
+        do {
+            try await devicesApi.rejectDevice(deviceId: device.deviceId)
+            return nil
+        } catch {
+            return "Reject failed: \(deviceFailure(error))"
+        }
+    }
+
+    /// Sign an approved device out for good: its tokens and device envelope are revoked on the server.
+    func revokeDevice(_ device: DeviceInfoDto) async -> String? {
+        guard let devicesApi else { return "Not connected" }
+        if (try? await repository.getSetting(SettingsKeys.deviceId)) == device.deviceId {
+            return "This is the device you're using. Use Disconnect in Settings instead."
+        }
+        do {
+            try await devicesApi.revokeDevice(deviceId: device.deviceId)
+            return nil
+        } catch {
+            return "Revoke failed: \(deviceFailure(error))"
+        }
+    }
+
+    /// A message for a failed server call; an expired session also moves the app to "sign in again".
+    private func deviceFailure(_ error: Error) -> String {
+        if case ApiError.sessionExpired = error, case .connected(let url, let email) = connection {
+            connection = .expired(serverUrl: url, email: email)
+        }
+        return Self.connectionMessage(error)
     }
 
     func disconnect() async {

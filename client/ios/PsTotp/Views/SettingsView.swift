@@ -87,6 +87,8 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.server")
                     if !email.isEmpty { LabeledContent("Account", value: email) }
                     syncRows
+                    NavigationLink("Devices") { DevicesView(model: model) }
+                        .accessibilityIdentifier("settings.devices")
                     NavigationLink("Change Password") { ChangePasswordView(model: model) }
                         .accessibilityIdentifier("settings.changePassword")
                     Button("Disconnect", role: .destructive) { confirmingDisconnect = true }

@@ -14,6 +14,12 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
     var vaultStatus = 200
     /// Status for the icon-library endpoint (an empty library on the server).
     var iconStatus = 200
+    /// What GET /devices returns, and the status for device actions.
+    var devicesBody = #"{"devices":[]}"#
+    var deviceActionStatus = 200
+    /// "METHOD /path" for every /devices request.
+    private(set) var deviceRequests: [String] = []
+    private(set) var lastDeviceBody: Data?
 
     init(_ replies: [Reply]) { self.replies = replies }
 
@@ -28,6 +34,12 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
         let path = request.url?.path ?? ""
         let reply = lock.withLock { () -> Reply in
             paths.append(path)
+            if path.hasPrefix("/api/devices") && path != "/api/devices/self/envelope" {
+                deviceRequests.append("\(request.httpMethod ?? "") \(path.dropFirst("/api".count))")
+                lastDeviceBody = request.httpBody
+                if request.httpMethod == "GET" { return Reply(body: devicesBody) }
+                return Reply(status: deviceActionStatus)
+            }
             if path == Self.iconPath {
                 iconRequests.append(request.httpMethod ?? "")
                 if iconStatus != 200 { return Reply(status: iconStatus) }
@@ -375,5 +387,78 @@ struct AppModelConnectionTests {
         let message = await model.changePassword(current: "pw", new: "NewPassw0rd!", confirm: "NewPassw0rd!")
         #expect(message == "Session expired — sign in again, then change the password")
         #expect(model.connection == .expired(serverUrl: "https://x.test/api", email: "a@b.c"))
+    }
+
+    // MARK: Devices
+
+    private func deviceJSON(_ id: String, _ status: String, key: String? = nil) -> String {
+        let keyField = key.map { "\"\($0)\"" } ?? "null"
+        return """
+        {"deviceId":"\(id)","deviceName":"Dev \(id)","platform":"ios","status":"\(status)","devicePublicKey":\(keyField),
+         "approvalRequestId":null,"approvedAt":"2026-11-01T00:00:00Z","revokedAt":null}
+        """
+    }
+
+    @Test func theDeviceListIsGroupedAndKnowsWhichOneIsThisDevice() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        transport.devicesBody = "{\"devices\":[\(deviceJSON("d1", "approved")),\(deviceJSON("other", "pending")),\(deviceJSON("old", "revoked"))]}"
+        guard case .success(let snapshot) = await model.loadDevices() else { Issue.record("load failed"); return }
+        #expect(snapshot.currentDeviceId == "d1")        // the id the server gave this device at login
+        #expect(snapshot.groups.pending.map(\.deviceId) == ["other"])
+        #expect(snapshot.groups.approved.map(\.deviceId) == ["d1"])
+        #expect(snapshot.groups.revoked.map(\.deviceId) == ["old"])
+    }
+
+    @Test func approvingHandsTheVaultKeyToThePendingDevice() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        let theirKey = Ecdh.generateKeyPair()
+        let pending = try JSONDecoder().decode(DeviceInfoDto.self, from: Data(
+            deviceJSON("new", "pending", key: Ecdh.exportPublicKey(theirKey.publicKey).base64EncodedString()).utf8))
+
+        #expect(await model.approveDevice(pending) == nil)
+        #expect(transport.deviceRequests == ["POST /devices/new/approve"])
+        // The envelope in the request opens with the new device's key, to the key this vault uses.
+        let sentData = try #require(transport.lastDeviceBody)
+        let body = try #require(try JSONSerialization.jsonObject(with: sentData) as? [String: Any])
+        let env = try #require(body["deviceEnvelope"] as? [String: Any])
+        let sent = Envelope(ciphertext: try #require(env["ciphertext"] as? String), nonce: try #require(env["nonce"] as? String))
+        let unwrapped = try Ecdh.unpackDeviceEnvelope(sent, devicePrivateKey: theirKey)
+        #expect(unwrapped.count == 32)
+        #expect((body["approvalAuth"] as? [String: Any])?["type"] as? String == "device")
+        #expect(body["approvalRequestId"] as? String == "new")
+    }
+
+    @Test func aDeviceWithoutAKeyCantBeApprovedAndNothingIsSent() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        let pending = try JSONDecoder().decode(DeviceInfoDto.self, from: Data(deviceJSON("new", "pending").utf8))
+        #expect(await model.approveDevice(pending) == "Approve failed: This device didn't provide a key, so it can't be approved.")
+        #expect(transport.deviceRequests.isEmpty)
+    }
+
+    @Test func rejectAndRevokeCallTheServer() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        let other = try JSONDecoder().decode(DeviceInfoDto.self, from: Data(deviceJSON("other", "approved").utf8))
+        #expect(await model.rejectDevice(other) == nil)
+        #expect(await model.revokeDevice(other) == nil)
+        #expect(transport.deviceRequests == ["POST /devices/other/reject", "POST /devices/other/revoke"])
+    }
+
+    @Test func thisDeviceCantBeRevokedFromHere() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        let mine = try JSONDecoder().decode(DeviceInfoDto.self, from: Data(deviceJSON("d1", "approved").utf8))
+        #expect(await model.revokeDevice(mine) == "This is the device you're using. Use Disconnect in Settings instead.")
+        #expect(transport.deviceRequests.isEmpty)
+    }
+
+    @Test func serverRefusalsAreShownAndAnExpiredSessionAsksToSignInAgain() async throws {
+        let (model, transport) = try await connectedModel(extra: [])
+        let other = try JSONDecoder().decode(DeviceInfoDto.self, from: Data(deviceJSON("other", "approved").utf8))
+        transport.deviceActionStatus = 403
+        #expect(await model.revokeDevice(other) == "Revoke failed: Access denied (HTTP 403)")
+        #expect(model.connection != .standalone)
+
+        transport.deviceActionStatus = 401   // refresh is then answered 500 by the exhausted script → session over
+        _ = await model.revokeDevice(other)
+        if case .expired = model.connection {} else { Issue.record("expected an expired session, got \(model.connection)") }
     }
 }

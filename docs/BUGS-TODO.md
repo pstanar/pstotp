@@ -104,6 +104,12 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   Also clear `ICON_LIBRARY_SERVER_VERSION` on logout so the next account counts as never synced. Same for the web
   client if it keeps a local copy. (iOS: `IconLibrarySyncService`, `IconDedup.merge`.)
 
+- [ ] **Gap: no way to revoke a device from Android** — `DevicesApi.revokeDevice` exists but `DevicesScreen` only
+  offers Approve / Reject on pending devices, so a lost phone can't be signed out from another phone (the web
+  client has a Revoke button). Also nothing marks which entry is the current device. Enhancement. (iOS: Revoke
+  with a confirmation on approved devices other than this one, and a "This device" label from the stored
+  device id.)
+
 ### Web client
 
 - [ ] **`parseOtpauthUri` accepts `NaN` digits/period (Verified)** — `totp.ts` uses `parseInt` and then
