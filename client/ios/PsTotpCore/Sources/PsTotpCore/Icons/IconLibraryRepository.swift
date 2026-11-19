@@ -44,6 +44,44 @@ public final class IconLibraryRepository: Sendable {
         }
     }
 
+    // MARK: Server sync state (used by `IconLibrarySyncService`)
+
+    /// The version the server last acknowledged; 0 = this device has never synced the library.
+    func serverVersion() async throws -> Int {
+        try await db.writer.read { try SettingsQueries.get($0, SettingsKeys.iconLibraryServerVersion) }
+            .flatMap(Int.init) ?? 0
+    }
+
+    func isDirty() async throws -> Bool {
+        try await db.writer.read { try SettingsQueries.get($0, SettingsKeys.iconLibraryDirty) } == "true"
+    }
+
+    /// The stored ciphertext as base64, nil when there is none.
+    func storedCiphertext() async throws -> String? {
+        let value = try await db.writer.read { try SettingsQueries.get($0, SettingsKeys.iconLibraryCiphertext) }
+        return value?.isEmpty == false ? value : nil
+    }
+
+    /// Replace the local copy with `ciphertext` as the server holds it at `version`.
+    func adopt(ciphertext: String, version: Int) async throws {
+        try await db.writer.write { db in
+            try SettingsQueries.set(db, SettingsKeys.iconLibraryCiphertext, ciphertext)
+            try SettingsQueries.set(db, SettingsKeys.iconLibraryServerVersion, String(version))
+            try SettingsQueries.set(db, SettingsKeys.iconLibraryDirty, "false")
+        }
+    }
+
+    /// Records that `pushed` reached the server as `version`. The library stays dirty if it changed
+    /// in the meantime, so that newer edit goes out at the next sync.
+    func recordPushed(_ pushed: String, version: Int) async throws {
+        try await db.writer.write { db in
+            try SettingsQueries.set(db, SettingsKeys.iconLibraryServerVersion, String(version))
+            if try SettingsQueries.get(db, SettingsKeys.iconLibraryCiphertext) == pushed {
+                try SettingsQueries.set(db, SettingsKeys.iconLibraryDirty, "false")
+            }
+        }
+    }
+
     /// Add one icon, de-duplicated on content. A duplicate leaves `current` as it is.
     /// - Throws: `IconLibraryError` when a cap would be exceeded.
     public func add(vaultKey: Data, current: [LibraryIcon], input: IconInput) async throws -> [LibraryIcon] {

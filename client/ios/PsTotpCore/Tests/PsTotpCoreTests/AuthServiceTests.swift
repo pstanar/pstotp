@@ -356,7 +356,9 @@ struct AuthServiceTests {
         let (service, _, client) = make([.init(body: #"{"userId":"u1","deviceId":"d1","accessToken":"AT","refreshToken":"RT"}"#), .init()])
         _ = try await service.register(serverUrl: url, email: "a@b.c", password: "pw", registrationSessionId: nil, localVaultKey: localKey0)
         try await repo.setSetting(SettingsKeys.lastSyncAt, "t")
+        try await repo.setSetting(SettingsKeys.iconLibraryServerVersion, "4")
         try await service.logout()
+        #expect(try await repo.getSetting(SettingsKeys.iconLibraryServerVersion) == nil)   // next account: never synced
 
         #expect(try await repo.getSetting(SettingsKeys.mode) == SettingsKeys.modeStandalone)
         for key in [SettingsKeys.serverUrl, SettingsKeys.deviceId, SettingsKeys.userId, SettingsKeys.lastSyncAt] {

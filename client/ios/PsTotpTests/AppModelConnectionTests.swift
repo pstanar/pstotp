@@ -12,17 +12,29 @@ final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
     /// Status for the vault endpoints, which are answered automatically (an empty, accepting vault)
     /// and don't use up scripted replies.
     var vaultStatus = 200
+    /// Status for the icon-library endpoint (an empty library on the server).
+    var iconStatus = 200
 
     init(_ replies: [Reply]) { self.replies = replies }
 
     /// Everything the test script isn't about: the requests a sync makes.
-    var vaultPaths: [String] { lock.withLock { paths.filter { $0.hasPrefix("/api/vault") } } }
+    var vaultPaths: [String] { lock.withLock { paths.filter { $0.hasPrefix("/api/vault") && $0 != Self.iconPath } } }
     var authPaths: [String] { lock.withLock { paths.filter { !$0.hasPrefix("/api/vault") } } }
+    /// One entry per request to the icon-library endpoint, as "GET" / "PUT".
+    private(set) var iconRequests: [String] = []
+    static let iconPath = "/api/vault/icon-library"
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let path = request.url?.path ?? ""
         let reply = lock.withLock { () -> Reply in
             paths.append(path)
+            if path == Self.iconPath {
+                iconRequests.append(request.httpMethod ?? "")
+                if iconStatus != 200 { return Reply(status: iconStatus) }
+                return request.httpMethod == "GET"
+                    ? Reply(body: #"{"encryptedPayload":"","version":0}"#)
+                    : Reply(body: #"{"version":1,"updatedAt":"2026-11-19T10:00:00Z"}"#)
+            }
             if path.hasPrefix("/api/vault") {
                 if vaultStatus != 200 { return Reply(status: vaultStatus) }
                 switch request.httpMethod {
@@ -253,5 +265,60 @@ struct AppModelConnectionTests {
         await model.waitForPendingSync()
         await model.disconnect()
         #expect(model.lastSyncAt == nil && model.syncState == .idle)
+    }
+
+    // MARK: Icon library
+
+    private let iconData = "data:image/png;base64,AAAA"
+
+    @Test func connectingPushesTheLocalIconLibrary() async throws {
+        let (model, transport) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()))
+        #expect(await model.addLibraryIcon(label: "Mine", dataUrl: iconData, source: nil) == nil)
+        #expect(model.libraryIcons.count == 1)
+
+        _ = await model.connect(serverUrl: "x.test", email: "a@b.c", password: "pw")
+        await model.waitForPendingSync()
+        // The server had none, so ours is created there.
+        #expect(transport.iconRequests == ["GET", "PUT"])
+        #expect(model.libraryIcons.map(\.label) == ["Mine"])
+        #expect(model.syncState == .idle)
+    }
+
+    @Test func connectedLibraryEditsGoToTheServer() async throws {
+        let (model, transport) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()))
+        _ = await model.connect(serverUrl: "x.test", email: "a@b.c", password: "pw")
+        await model.waitForPendingSync()
+        let before = transport.iconRequests.count
+
+        #expect(await model.addLibraryIcon(label: "New", dataUrl: iconData, source: nil) == nil)
+        await model.waitForPendingSync()
+        #expect(transport.iconRequests.count > before)
+        #expect(transport.iconRequests.last == "PUT")
+        #expect(model.libraryIcons.map(\.label) == ["New"])
+    }
+
+    @Test func aLibraryEditIsRefusedWhenTheServerCopyCantBeFetched() async throws {
+        let (model, transport) = await unlockedModel(try loginReplies(password: "pw", serverKey: KeyDerivation.generateVaultKey()))
+        transport.iconStatus = 500
+        _ = await model.connect(serverUrl: "x.test", email: "a@b.c", password: "pw")
+        await model.waitForPendingSync()
+        #expect(model.syncState == .failed("Couldn't sync My icons: Server error (HTTP 500)"))
+
+        // Fail closed: editing from an unreconciled local copy could overwrite the account's library.
+        #expect(await model.addLibraryIcon(label: "X", dataUrl: iconData, source: nil)
+                == "Couldn't sync icon library — check your connection and try again.")
+        #expect(await model.removeLibraryIcon(id: "any") == "Couldn't sync icon library — check your connection and try again.")
+        #expect(model.libraryIcons.isEmpty)
+        #expect(!transport.iconRequests.contains("PUT"))
+
+        transport.iconStatus = 200
+        #expect(await model.addLibraryIcon(label: "X", dataUrl: iconData, source: nil) == nil)
+    }
+
+    @Test func standaloneLibraryEditsNeverTouchTheNetwork() async {
+        let (model, transport) = await unlockedModel([])
+        #expect(await model.addLibraryIcon(label: "Mine", dataUrl: iconData, source: nil) == nil)
+        await model.waitForPendingSync()
+        #expect(transport.paths.isEmpty)
     }
 }

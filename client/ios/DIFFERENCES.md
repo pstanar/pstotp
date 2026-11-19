@@ -66,9 +66,10 @@ Legend — **Kind**: `behaviour` (observable difference), `platform` (iOS can't 
 | 41 | Reordering on another device | Applied only when the entry's version also changed, so a pure reorder never reaches other devices. | A pulled sort order is applied to entries with no unsent change, version or not. | The server's reorder doesn't bump versions. | internal | |
 | 42 | After the session expires | The app shows the Connect button with no explanation. | Settings says the session expired and offers "Sign in again" with the server and email filled in. | Clearer. | cosmetic | |
 | 43 | Local password envelope when the account's KDF isn't the default | Derived with the server's parameters, so offline unlock (which uses the pinned 64 MB / t=3 / p=4) can fail. | A second key is derived with the pinned parameters for the local envelope. | Avoids locking the user out of their own vault. | internal | |
+| 44 | A device that has never synced My icons meets an account that has a library | The device's copy replaces the account's (last write wins), so icons from other devices are lost. | The two are merged: the account's icons plus ours that match neither by id nor by content hash, within the caps; the result is pushed. Later changes are last-write-wins as on Android. | Connecting must not delete icons on either side. Decided with the user. | internal | |
 
 ## Not ported yet (pending, not differences)
 
-Password sign-in, registration and vault sync are done. Still to do: the icon library's server sync, passkey
+Password sign-in, registration, vault sync and the icon library's sync are done. Still to do: passkey
 login, account recovery, and the connected-only Change Password, Devices, Audit Log, Passkeys and Recovery Codes
 buttons in Settings.

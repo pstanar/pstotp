@@ -92,6 +92,18 @@ Collected while reading the server / web / Android code for the iOS port. Fix as
   `loginWithPasswordEnvelopeAdoptsTheServerVaultKey`.) The passkey path doesn't exist on iOS yet: apply the same
   rule when it is ported.
 
+- [ ] **First connect overwrites the account's icon library (Suspected, likely)** — `save()` sets
+  `ICON_LIBRARY_DIRTY` on every local change, including in standalone mode, so a device with its own custom icons is
+  dirty when it first connects. `refreshIconLibraryFromServer` runs `pushIfDirty` before `pullFromServer`; with
+  expected version 0 the server answers 409 if the account has a library, and `pushCiphertext` handles that by
+  refetching the version and putting again — the device's copy replaces the account's, so icons added on other
+  devices are lost. Related: the local blob is still encrypted with the old local vault key (see the "wrong key"
+  entry above), so what is pushed may be unreadable on every other device. Fix: when the device has never synced
+  the library (`ICON_LIBRARY_SERVER_VERSION` is 0) and the server has one, merge instead (server icons plus local
+  ones that match neither by id nor by `dataHash`/`sourceHash`, within the count and byte caps) and push the result.
+  Also clear `ICON_LIBRARY_SERVER_VERSION` on logout so the next account counts as never synced. Same for the web
+  client if it keeps a local copy. (iOS: `IconLibrarySyncService`, `IconDedup.merge`.)
+
 ### Web client
 
 - [ ] **`parseOtpauthUri` accepts `NaN` digits/period (Verified)** — `totp.ts` uses `parseInt` and then

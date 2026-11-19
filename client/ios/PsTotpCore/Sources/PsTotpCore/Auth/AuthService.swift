@@ -186,7 +186,9 @@ public final class AuthService: Sendable {
         try secrets.remove(.refreshToken)
         try await repository.updateSettings(
             set: [SettingsKeys.mode: SettingsKeys.modeStandalone],
-            delete: [SettingsKeys.serverUrl, SettingsKeys.deviceId, SettingsKeys.userId, SettingsKeys.lastSyncAt])
+            delete: [SettingsKeys.serverUrl, SettingsKeys.deviceId, SettingsKeys.userId, SettingsKeys.lastSyncAt,
+                     // The next account may differ: treat the library as never synced.
+                     SettingsKeys.iconLibraryServerVersion])
     }
 
     // MARK: Persistence

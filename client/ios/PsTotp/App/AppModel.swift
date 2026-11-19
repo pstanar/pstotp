@@ -60,6 +60,10 @@ final class AppModel {
     private let biometrics: BiometricKeyStore
     private let auth: AuthService
     private let sync: SyncService?
+    private let iconSync: IconLibrarySyncService?
+    /// The in-memory library came from (or was reconciled with) the server this session, so editing it
+    /// can't overwrite the account's real library with a stale local copy.
+    private var libraryHydrated = false
     private var syncAgain = false
     private var syncTask: Task<Void, Never>?
     private var vaultKey: Data?
@@ -88,12 +92,14 @@ final class AppModel {
             db: nil, repository: repository, biometrics: biometrics, secrets: InMemorySecretStore(), transport: URLSessionTransport())
         self.auth = server.auth
         self.sync = server.sync
+        self.iconSync = server.iconSync
     }
 
     /// Authentication and sync, sharing one API client (so they share one set of tokens).
     struct ServerSession {
         let auth: AuthService
         let sync: SyncService?
+        let iconSync: IconLibrarySyncService?
     }
 
     /// - Parameter db: Needed for sync; nil builds a session without it (tests of other features).
@@ -108,7 +114,10 @@ final class AppModel {
             biometrics.removeKey()
             try? await repository.setSetting(SettingsKeys.biometricEnabled, "false")
         }
-        return ServerSession(auth: auth, sync: db.map { SyncService(db: $0, client: client, repository: repository) })
+        return ServerSession(
+            auth: auth,
+            sync: db.map { SyncService(db: $0, client: client, repository: repository) },
+            iconSync: db.map { IconLibrarySyncService(library: IconLibraryRepository(db: $0), client: client) })
     }
 
     // MARK: Startup
@@ -208,6 +217,7 @@ final class AppModel {
             vaultKey = key
             entries = decrypted
             libraryIcons = library
+            libraryHydrated = false
             sortUsage = usage
             errorMessage = nil
             phase = .unlocked
@@ -229,6 +239,7 @@ final class AppModel {
         vaultKey = nil
         entries = []
         libraryIcons = []
+        libraryHydrated = false
         importIconSources = [:]
         errorMessage = nil
         if phase == .unlocked { phase = .locked }
@@ -360,6 +371,7 @@ final class AppModel {
                 syncState = .idle
                 lastSyncAt = try? await repository.getSetting(SettingsKeys.lastSyncAt)
                 if pulled > 0 { await reloadEntries() }
+                if let message = await syncLibrary() { syncState = .failed(message) }
             case .error(let message):
                 syncState = .failed(message)
             case .sessionExpired:
@@ -371,6 +383,32 @@ final class AppModel {
             }
         } while syncAgain
     }
+
+    /// Reconcile My icons with the server (needs the unlocked vault: the library is encrypted).
+    /// - Returns: a message when it failed, nil otherwise (including when locked).
+    private func syncLibrary() async -> String? {
+        guard let key = vaultKey, let iconSync else { return nil }
+        do {
+            libraryIcons = try await iconSync.sync(vaultKey: key)
+            libraryHydrated = true
+            return nil
+        } catch {
+            return "Couldn't sync My icons: \(Self.connectionMessage(error))"
+        }
+    }
+
+    /// Connected library edits need the server's copy first (fail closed): a stale or empty local
+    /// base must never replace the account's real library.
+    private func libraryIsAuthoritative() async -> Bool {
+        switch connection {
+        case .standalone: return true
+        case .connected, .expired:
+            if libraryHydrated { return true }
+            return await syncLibrary() == nil
+        }
+    }
+
+    private static let libraryNotSynced = "Couldn't sync icon library — check your connection and try again."
 
     /// Re-read the entries after a pull. A decrypt failure here means the server holds entries
     /// encrypted with another key — shown, not hidden.
@@ -393,6 +431,7 @@ final class AppModel {
             vaultKey = key
             entries = decrypted
             libraryIcons = library
+            libraryHydrated = false
             sortUsage = usage
             biometricEnabled = biometricEnabled && biometrics.hasStoredKey()
             errorMessage = nil
@@ -659,10 +698,11 @@ final class AppModel {
     private func addImportedIconsToLibrary(_ candidates: [ImportCandidate], key: Data) async -> IconBatchResult? {
         guard addIconsToLibrary else { return nil }
         let items = ImportIcons.libraryItems(candidates, sourceBytes: importIconSources)
-        guard !items.isEmpty,
+        guard !items.isEmpty, await libraryIsAuthoritative(),
               let (icons, result) = try? await iconLibrary.addBatch(vaultKey: key, current: libraryIcons, items: items)
         else { return nil }
         libraryIcons = icons
+        requestSync()
         return result
     }
 
@@ -679,10 +719,12 @@ final class AppModel {
     /// message; a duplicate is not a failure, the existing icon is simply kept.
     func addLibraryIcon(label: String, dataUrl: String, source: Data?) async -> String? {
         guard let key = vaultKey else { return "Vault is locked" }
+        guard await libraryIsAuthoritative() else { return Self.libraryNotSynced }
         do {
             libraryIcons = try await iconLibrary.add(
                 vaultKey: key, current: libraryIcons,
                 input: IconInput(label: label, dataUrl: dataUrl, sourceBytes: source))
+            requestSync()
             return nil
         } catch let error as IconLibraryError {
             return error.description
@@ -709,10 +751,12 @@ final class AppModel {
 
     private func changeLibrary(_ change: ([LibraryIcon]) -> [LibraryIcon]) async -> String? {
         guard let key = vaultKey else { return "Vault is locked" }
+        guard await libraryIsAuthoritative() else { return Self.libraryNotSynced }
         let next = change(libraryIcons)
         do {
             try await iconLibrary.save(vaultKey: key, icons: next)
             libraryIcons = next
+            requestSync()
             return nil
         } catch {
             return "Could not save icon"
